@@ -1,0 +1,81 @@
+from sentence_transformers import SentenceTransformer
+from supabase import create_client, Client
+from Dreamer.dreamer import resume_parser
+from Dreamer.dreamer import config
+
+supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+embedder = SentenceTransformer(config.EMBEDDING_MODEL)
+
+def format_resume_for_embedding(resume_data):
+    return (
+        resume_data.get("Title", ""),
+        resume_data.get("Skills", ""),
+        resume_data.get("Description", "")
+    )
+
+def embed_resume_fields(title_text, skills_text, desc_text):
+    emb_title = embedder.encode(title_text).tolist()
+    emb_skills = embedder.encode(skills_text).tolist()
+    emb_desc = embedder.encode(desc_text).tolist()
+    return emb_title, emb_skills, emb_desc
+
+def search_supabase(emb_title, emb_skills, emb_desc, k=config.MATCH_TOP_K):
+    r1 = supabase.rpc(config.MATCH_RPC_TITLE, {
+        "query_embedding": emb_title,
+        "match_count": k
+    }).execute().data
+    r2 = supabase.rpc(config.MATCH_RPC_SKILLS, {
+        "query_embedding": emb_skills,
+        "match_count": k
+    }).execute().data
+    r3 = supabase.rpc(config.MATCH_RPC_DESC, {
+        "query_embedding": emb_desc,
+        "match_count": k
+    }).execute().data
+    return r1, r2, r3
+
+def combine_scores(res_title, res_skills, res_desc,
+                   w_title=config.MATCH_W_TITLE, w_skills=config.MATCH_W_SKILLS, w_desc=config.MATCH_W_DESC):
+    score_map = {}
+    def add_scores(results, weight):
+        for row in results:
+            job_id = row["job_id"]
+            sim = float(row["similarity"])
+            score_map[job_id] = score_map.get(job_id, 0) + sim * weight
+    add_scores(res_title, w_title)
+    add_scores(res_skills, w_skills)
+    add_scores(res_desc, w_desc)
+    return score_map
+
+def fetch_jobs(job_ids):
+    if not job_ids:
+        return []
+    response = supabase.table(config.SUPABASE_TABLE_JOBS).select("*").in_("job_id", job_ids).execute()
+    return response.data
+
+def rank_jobs(score_map, top_n=config.MATCH_TOP_N):
+    sorted_ids = sorted(score_map, key=lambda x: score_map[x], reverse=True)
+    top_ids = sorted_ids[:top_n]
+    jobs = fetch_jobs(top_ids)
+    for job in jobs:
+        job["match_score"] = float(score_map[job["job_id"]])
+    return jobs
+
+def get_top_jobs(resume_data, k=config.MATCH_TOP_K, top_n=config.MATCH_TOP_N):
+    title_text, skills_text, desc_text = format_resume_for_embedding(resume_data)
+    emb_title, emb_skills, emb_desc = embed_resume_fields(
+        title_text, skills_text, desc_text
+    )
+    res_title, res_skills, res_desc = search_supabase(
+        emb_title, emb_skills, emb_desc, k=k
+    )
+    score_map = combine_scores(res_title, res_skills, res_desc)
+    top_jobs = rank_jobs(score_map, top_n)
+    top_jobs = [{j: i[j] for j in i if j not in ['title_embedding', 'skills_embedding', 'desc_embedding']} for i in top_jobs]
+    return top_jobs
+
+if __name__ == "__main__":
+    results = get_top_jobs(
+        resume_parser.extract_candidate_info("resume-computer-engineering.pdf")
+    )
+    results = [(i["title"], i["match_score"]) for i in results]

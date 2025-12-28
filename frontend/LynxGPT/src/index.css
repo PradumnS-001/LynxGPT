@@ -1,0 +1,382 @@
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Space Grotesk", sans-serif !important;
+  transition: all 0.3s ease-in-out;
+}
+
+:root{
+  /* accent variables are populated at runtime from main.jsx */
+  --accent-vibrant: #00F2FF;
+  --accent-dark: #00121a;
+  --accent-border: var(--accent-vibrant);
+  --accent-glow: var(--accent-vibrant);
+  --bg-charcoal: #121212;
+  --glass-bg: rgba(20,20,20,0.6);
+  --glass-border-opacity: 0.9;
+}
+
+body {
+  background-color: var(--bg-charcoal);
+  height: 100vh;
+  width: 100vw;
+  max-width: 100vw;
+  max-height: 100vh;
+  overflow: hidden;
+  scrollbar-width: none;
+  position: relative;
+  /* layered backgrounds: base charcoal -> accent dark linear gradient -> radial light leaks */
+  background-image: linear-gradient(180deg, var(--bg-charcoal) 0%, var(--accent-dark) 60%),
+                    radial-gradient(600px 400px at 10% 10%, rgba(255,255,255,0.02), transparent 20%),
+                    radial-gradient(500px 360px at 95% 95%, rgba(255,255,255,0.015), transparent 20%);
+  background-blend-mode: normal, screen, screen;
+}
+
+/* subtle digital grid (circuit-board feel) */
+body::before{
+  content: '';
+  position: fixed;
+  inset: 0;
+  /* SVG tiled pattern for 1px lines + 2px squares at low opacity */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'> <g fill='none' stroke='rgba(255,255,255,0.1)' stroke-width='5'> <path d='M1 0 v24'/> <path d='M0 1 h24'/> </g> <rect x='10' y='10' width='2' height='2' fill='rgba(255,255,255,0.1)'/> </svg>");
+  background-repeat: repeat;
+  opacity: 1;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+/* film grain overlay using inline SVG turbulence */
+body::after{
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100%' height='100%'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23f)' opacity='0.05' /></svg>");
+  opacity: 1;
+  pointer-events: none;
+}
+
+/* make radial blobs use accent color (very low opacity) */
+.radial-accent-blob-1,
+.radial-accent-blob-2 {
+  position: fixed;
+  width: 1000px;
+  height: 1000px;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  opacity: 0.1;
+  mix-blend-mode: screen;
+  z-index: 0;
+}
+.radial-accent-blob-1{ left: -12%; top: -10%; background: radial-gradient(circle at 30% 30%, rgba(var(--accent-rgb),0.25) 0%, rgba(var(--accent-rgb),0.10) 40%, transparent 70%); animation: float-blob-1 14s ease-in-out infinite; }
+.radial-accent-blob-2{ right: -10%; bottom: -8%; background: radial-gradient(circle at 70% 70%, rgba(var(--accent-rgb),0.22) 0%, rgba(var(--accent-rgb),0.08) 40%, transparent 70%); animation: float-blob-2 16s ease-in-out infinite; }
+
+/* ethereal orbs */
+.ethereal-orb {
+  position: fixed;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  filter: blur(10px);
+  pointer-events: none;
+  opacity: 1;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle, rgba(var(--accent-rgb),0.2), rgba(var(--accent-rgb),0));
+  animation: float-orb 8s ease-in-out infinite;
+  z-index: 0;
+}
+.ethereal-orb-1 { left: 8%; top: 18%; animation-delay: 0s; opacity: 0.4; }
+.ethereal-orb-2 { left: 22%; top: 36%; animation-delay: 1.4s; }
+.ethereal-orb-3 { left: 42%; bottom: 18%; animation-delay: 2.8s; }
+.ethereal-orb-4 { right: 10%; bottom: 28%; animation-delay: 1s; }
+.ethereal-orb-5 { left: 6%; bottom: 10%; animation-delay: 3s; }
+.ethereal-orb-6 { left: 70%; top: 14%; animation-delay: 2s; }
+.ethereal-orb-7 { left: 60%; bottom: 30%; animation-delay: 4s; }
+
+/* ensure main panels sit above orbs */
+#root { position: relative; z-index: 2; }
+.conversation-section, .history-section { position: relative; z-index: 3; }
+
+@keyframes float-orb {
+  0% { transform: translateY(0) scale(1); opacity: 1 }
+  25% { transform: translateY(-12px) scale(1.05); opacity: 0.5 }
+  50% { transform: translateY(0) scale(0.98); opacity: 0 }
+  75% { transform: translateY(10px) scale(1.02); opacity: 0.5 }
+  100% { transform: translateY(0) scale(1); opacity: 1 }
+}
+
+@keyframes float-blob-1 {
+  0% { transform: translate(0,0) scale(1); opacity: 1}
+  50% { transform: translate(18px, -24px) scale(1.02); opacity: 0}
+  100% { transform: translate(0,0) scale(1); opacity: 1}
+}
+@keyframes float-blob-2 {
+  0% { transform: translate(0,0) scale(1); opacity: 1}
+  50% { transform: translate(-28px, 18px) scale(1.03); opacity: 0}
+  100% { transform: translate(0,0) scale(1); opacity: 1}
+}
+
+.conversation-section, .history-section{
+  box-shadow: 3px 6px 8px rgba(0, 0, 0, 0.789);
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,var(--glass-border-opacity));
+  border-image: linear-gradient(180deg, rgba(255,255,255,0.02), var(--accent-border));
+}
+
+a {
+  color: inherit;
+}
+a:hover {
+  text-decoration: underline;
+}
+a:visited {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background-color: #391049;
+  color: #beab19;
+}
+
+#root{
+  display: flex;
+  flex-direction: row;
+  margin: 6vh 6vh;
+  height: 88vh;
+  filter: brightness(1.2);
+}
+
+.history-section {
+  overflow: none;
+  width: 24.8%;
+  margin-right: 3.6%;
+  color: rgba(210, 210, 210, 0.95);
+  border-radius: 16px;
+  position: relative;
+}
+.history-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('../src/assets/spider.png');
+  background-position: center;
+  background-size: 45%;
+  background-repeat: no-repeat;
+  opacity: 0.1;
+  pointer-events: none;
+  filter: hue-rotate(0deg) saturate(0.6) brightness(1.1);
+  mix-blend-mode: screen;
+  border-radius: 16px;
+}
+.conversation-section {
+  overflow: auto;
+  width: 71.6%;
+  color: rgba(210, 210, 210, 0.95);
+  padding: 2rem;
+  border-radius: 16px;
+  overflow: auto;
+  position: relative;
+}
+.conversation-section::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('../src/assets/spider.png');
+  background-position: center;
+  background-size: 20%;
+  background-repeat: no-repeat;
+  opacity: 0.1;
+  pointer-events: none;
+  filter: hue-rotate(0deg) saturate(1.6) brightness(1.1) ;
+  mix-blend-mode: screen;
+  border-radius: 16px;
+}
+
+ul {
+  list-style-type: none;
+  overflow: auto;
+}
+
+.btn {
+  padding: 0.55rem 1.25rem;
+  border-radius: 10px;
+  border: 2px solid rgb(26, 23, 32);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  height: 28px;
+  width: 120px;
+  padding-left: 0.5rem;
+  padding-right: 0.3rem;
+  background: rgb(26, 23, 32);
+  color: rgb(244, 250, 221);
+}
+
+.btn:hover {
+  background: rgb(244, 250, 221);
+  color: rgb(26, 23, 32);
+  transform: translateY(-2px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.12),
+    0 2px 4px rgba(0, 0, 0, 0.10);
+}
+
+.btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+/* New chat button should blend with panel background on hover */
+.new-chat-btn:hover {
+  background: var(--accent-dark);
+  color: rgba(255,255,255,0.95);
+  transform: translateX(0);
+  box-shadow: 0 8px 24px rgba(var(--accent-rgb), 0.06);
+  border: 1px solid var(--accent-border);
+}
+
+
+body {
+  --sb-track-color: #232E33;
+  --sb-thumb-color: var(--accent-vibrant);
+  --sb-size: 8px;
+}
+
+*::-webkit-scrollbar {
+  width: var(--sb-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--sb-track-color);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--sb-thumb-color);
+  border-radius: 3px;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  body {
+    scrollbar-color: var(--sb-thumb-color)
+                     var(--sb-track-color);
+  }
+}
+
+li {
+  font-size:large;
+  background-color: inherit;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 100;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 10px 0px;
+  border-bottom: 2px solid rgb(67, 68, 68);
+  padding: 0.5rem 0.9rem;
+  padding-right: 1.6rem;
+  transition: background-color 0.3s ease-in-out, width 0.3s ease-in-out;
+}
+li:hover {
+  background-color: rgba(var(--accent-rgb), 0.16);
+}
+
+.Header, .Footer {
+  height: 7.7%;
+  max-height: 7.7%;
+  display: flex;
+  flex-direction: row;
+  padding: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+.Footer{
+  border-top: 2px solid rgb(67, 68, 68);
+}
+
+.Content{
+  height: 84.6%;
+  border: 0px solid rgb(67, 68, 68);
+  overflow-y:scroll;
+}
+img::selection {
+  background: rgba(255, 255, 255, 0.336);
+}
+
+.search-container {
+  position: relative;
+  width: 100%;
+  max-width: 160px;    /* similar width ratio to button */
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+  margin-left: 32px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.45rem 1.4rem;  /* same paddings as .btn */
+  padding-left: 2.2rem;     /* space for icon */
+  border-radius: 999px;     /* matching pill shape */
+  border: 2px solid rgb(26, 23, 32);
+  background: rgb(35, 35, 35);
+  color: rgb(244, 250, 221);
+
+  font-size: 0.9rem;
+  font-weight: 500;
+
+  outline: none;
+  transition: 
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.search-input::placeholder {
+  color: rgba(244, 250, 221, 0.6); /* soft placeholder tone */
+}
+
+.search-input:focus {
+  background: var(--glass-bg);
+  color: rgba(255,255,255,0.95);
+
+  box-shadow:
+    0 8px 30px rgba(var(--accent-rgb), 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.18);
+
+  transform: translateY(0);
+  border: 1px solid var(--accent-border);
+}
+
+.search-icon {
+  width: 16px;
+  height: 16px;
+  fill: rgba(244, 250, 221, 0.8);
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  pointer-events: none;
+  transition: fill 0.2s ease;
+}
+
+.search-input:focus ~ .search-icon {
+  fill: rgb(26, 23, 32);
+}
+
+.h2 {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: medium;
+  font-weight: 400;
+  padding: 0.4rem 0.8rem;
+  font-size: 22px;
+  margin-top: 0.2rem;
+  border-bottom: 2px solid rgb(67, 68, 68);
+}
