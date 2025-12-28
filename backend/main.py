@@ -31,6 +31,12 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for Docker healthcheck."""
+    return {"status": "healthy"}
+
+
 class Message(BaseModel):
     sender: str
     text: str

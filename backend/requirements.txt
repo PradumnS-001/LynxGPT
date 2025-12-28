@@ -1,0 +1,48 @@
+# Core API
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+
+# LangChain & LLM
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+langchain-google-genai
+langgraph
+google-generativeai
+
+# ML/Embeddings
+torch
+sentence-transformers
+numpy
+huggingface-hub
+
+# Database
+pymongo
+psycopg2-binary
+supabase
+
+# PDF Processing
+PyMuPDF
+pdfplumber
+pdf2image
+pytesseract
+opencv-python
+Pillow
+
+# Text Processing
+nltk
+
+# Web Scraping
+beautifulsoup4
+selenium
+requests
+urllib3
+aiohttp
+
+# Utilities
+python-dotenv
+tqdm
+httpx

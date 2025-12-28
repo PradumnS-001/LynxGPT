@@ -1,54 +1,45 @@
 import os
 import json
-from flask import Flask, request, render_template, jsonify
-from flask_cors import CORS
-from werkzeug.utils import secure_filename
+import shutil
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from pathlib import Path
 import numpy as np
 from Dreamer.dreamer import config
-from Dreamer.dreamer import resume_parser
-from Dreamer.dreamer import similarity
-from Dreamer.dreamer.utils import format_job_result, log_step
+from Dreamer.dreamer.pipeline import run_resume_pipeline
+from Dreamer.dreamer.utils import log_step
 
 # Ensure uploads folder exists
 os.makedirs(config.FILES_UPLOAD_FOLDER, exist_ok=True)
 
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-app.config["UPLOAD_FOLDER"] = config.FILES_UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
+app = FastAPI()
 
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Config
+UPLOAD_FOLDER = config.FILES_UPLOAD_FOLDER
+MAX_FILE_SIZE = 16 * 1024 * 1024  # 16MB
 ALLOWED_EXT = {".pdf"}
 
-def allowed_file(filename):
+
+def allowed_file(filename: str) -> bool:
     return os.path.splitext(filename.lower())[1] in ALLOWED_EXT
 
 
-# -----------------------------
-# Main Pipeline for Resume → Jobs
-# -----------------------------
-def run_resume_pipeline(pdf_path):
-    log_step("Pipeline", f"Running resume extraction for: {pdf_path}")
+def secure_filename(filename: str) -> str:
+    """Simple filename sanitization."""
+    return Path(filename).name.replace(" ", "_")
 
-    candidate_info = resume_parser.extract_candidate_info(pdf_path)
-    log_step("Pipeline", f"Candidate Info Extracted")
 
-    # ADD DEBUG: print the extracted candidate info
-    print("\n[DEBUG] candidate_info returned from Resume_Parser:")
-    print(json.dumps(candidate_info, indent=2))
-
-    ranked_jobs = similarity.get_top_jobs(candidate_info)
-    log_step("Pipeline", f"Similarity search complete")
-
-    # ADD DEBUG: print the ranked_jobs list from Similarity
-    print("\n[DEBUG] ranked_jobs returned from Similarity.get_top_jobs:")
-    print(json.dumps(ranked_jobs, indent=2))
-
-    return {
-        "candidate_info": candidate_info,
-        "ranked_jobs": ranked_jobs
-    }
-
-def normalize_scores(score_map):
+def normalize_scores(score_map: dict) -> dict:
     scores = np.array(list(score_map.values()), dtype=float)
 
     mean = scores.mean()
@@ -70,26 +61,33 @@ def normalize_scores(score_map):
     # Return in same job_id order
     return {job_id: float(norm) for job_id, norm in zip(score_map.keys(), normalized)}
 
+
 # -----------------------------
 # ROUTES
 # -----------------------------
-@app.route("/", methods=["GET"])
-def index():
-    return render_template("upload.html")
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    """Serve the upload page."""
+    template_path = Path(__file__).parent / "templates" / "upload.html"
+    if template_path.exists():
+        return template_path.read_text()
+    return HTMLResponse(content="<h1>Resume Upload API</h1><p>POST /upload with a PDF file</p>")
 
 
-@app.route("/upload", methods=["POST"])
-def upload():
-    file = request.files.get("file")
-
+@app.post("/upload")
+async def upload(file: UploadFile = File(...)):
     if not file or file.filename == "":
-        return jsonify({"error": "No file provided"}), 400
+        raise HTTPException(status_code=400, detail="No file provided")
+    
     if not allowed_file(file.filename):
-        return jsonify({"error": "Only PDF files allowed"}), 400
+        raise HTTPException(status_code=400, detail="Only PDF files allowed")
 
     filename = secure_filename(file.filename)
-    path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-    file.save(path)
+    path = os.path.join(UPLOAD_FOLDER, filename)
+    
+    # Save uploaded file
+    with open(path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
     log_step("Web", f"Saved upload to {path}")
 
@@ -101,12 +99,11 @@ def upload():
         ranked_jobs = result["ranked_jobs"]
 
         if not ranked_jobs:
-            response_data = {
+            return JSONResponse(content={
                 "candidate_info": candidate_info,
                 "jobs": [],
                 "message": "No matching jobs found"
-            }
-            return jsonify(response_data)
+            })
 
         # -------------------------------
         # 🔥 APPLY NORMALIZATION HERE
@@ -141,21 +138,21 @@ def upload():
             for job in top_n_jobs
         ]
 
-        response_data = {
+        return JSONResponse(content={
             "summary": candidate_info.get("Description") or "",
             "candidate_info": candidate_info,
             "top_jobs": formatted,
             "total_matches": len(formatted)
-        }
-        return jsonify(response_data)
+        })
 
     except Exception as e:
         log_step("Web", f"Error processing resume: {str(e)}")
-        return jsonify({"error": f"Processing failed: {str(e)}"}), 500
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 
 # -----------------------------
 # Server Run
 # -----------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5000)
