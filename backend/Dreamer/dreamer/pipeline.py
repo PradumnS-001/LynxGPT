@@ -38,4 +38,3 @@ def run_resume_pipeline(pdf_path):
         "candidate_info": candidate_info,
         "ranked_jobs": ranked_jobs,
     }
-

@@ -23,6 +23,7 @@ huggingface-hub
 pymongo
 psycopg2-binary
 supabase
+pandas
 
 # PDF Processing
 PyMuPDF

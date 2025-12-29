@@ -1,13 +1,34 @@
+"""Info extractor module - extracts structured candidate information using LangChain."""
+
 import json
-import google.generativeai as genai
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from Dreamer.dreamer.utils import log_step
 import Dreamer.dreamer.config as config
 
+# Initialize LangChain Gemini model (lazy loading)
+_llm = None
+
+def _get_llm():
+    """Get or create the LangChain LLM instance."""
+    global _llm
+    if _llm is None:
+        if not config.GEMINI_API_KEY:
+            raise ValueError("GOOGLE_API_KEY/LLM_API_KEY is not set. Please update your .env file.")
+        
+        _llm = ChatGoogleGenerativeAI(
+            model=config.MODEL_GEMINI,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.2,
+            max_output_tokens=2048,
+        )
+    return _llm
+
+
 def create_extraction_prompt(resume_text):
-    """Create LLM prompt for structured information extraction"""
-    prompt = f"""
-Extract the following information from this resume and return it as a JSON object:
+    """Create LLM prompt for structured information extraction."""
+    return f"""Extract the following information from this resume and return it as a JSON object:
 
 1. education: The highest level of education (e.g., "Bachelor's", "Master's", "PhD", "High School")
 2. experience: Total years of experience as a single number (e.g., 5)
@@ -25,63 +46,32 @@ Return ONLY a valid JSON object with these exact keys:
   "key_skills": "",
   "department": "",
   "role_category": ""
-}}
-"""
-    return prompt
-
-
-def _get_gemini_model():
-    """Configure and return a Gemini model instance."""
-    if not config.LLM_API_KEY:
-        raise ValueError("LLM_API_KEY is not set. Please update your .env file.")
-
-    genai.configure(api_key=config.LLM_API_KEY)
-
-    return genai.GenerativeModel(
-        model_name=config.LLM_MODEL,
-        system_instruction=(
-            "You are a helpful AI assistant that extracts structured information "
-            "from resumes. Always return responses in valid JSON format."
-        ),
-        generation_config={
-            "temperature": 0.2,
-            "top_p": 0.95,
-            "max_output_tokens": 2048,
-            "response_mime_type": "application/json",
-        },
-    )
+}}"""
 
 
 def call_llm_for_extraction(resume_text):
-    """Call Gemini LLM API to extract structured information from resume"""
-    log_step("LLM API", "Initializing Gemini client")
+    """Call LangChain LLM to extract structured information from resume."""
+    log_step("LLM API", "Initializing LangChain Gemini client")
 
-    model = _get_gemini_model()
+    llm = _get_llm()
     prompt = create_extraction_prompt(resume_text)
 
     try:
-        response = model.generate_content(prompt)
-        response_text = getattr(response, "text", "") or ""
-
-        if not response_text:
-            # Fall back to concatenating candidate parts if text helper is empty
-            for candidate in getattr(response, "candidates", []):
-                content = getattr(candidate, "content", None)
-                if not content:
-                    continue
-                for part in getattr(content, "parts", []):
-                    response_text += getattr(part, "text", "")
-
-        log_step("LLM API", "Successfully received response from Gemini API")
-        return response_text
+        messages = [
+            SystemMessage(content="You are a helpful AI assistant that extracts structured information from resumes. Always return responses in valid JSON format."),
+            HumanMessage(content=prompt)
+        ]
+        response = llm.invoke(messages)
+        log_step("LLM API", "Successfully received response from LangChain Gemini")
+        return response.content
 
     except Exception as e:
-        log_step("LLM API", f"Error calling Gemini API: {str(e)}")
+        log_step("LLM API", f"Error calling LangChain Gemini: {str(e)}")
         raise
 
 
 def parse_llm_response(llm_response):
-    """Parse LLM response and extract JSON"""
+    """Parse LLM response and extract JSON."""
     try:
         # Try to find JSON in the response
         json_start = llm_response.find('{')
@@ -102,8 +92,8 @@ def parse_llm_response(llm_response):
 
 
 def extract_candidate_info(resume_text):
-    """Main function to extract structured candidate information using LLM"""
-    log_step("Information Extraction", "Calling LLM for extraction")
+    """Main function to extract structured candidate information using LLM."""
+    log_step("Information Extraction", "Calling LangChain LLM for extraction")
     
     # Call LLM
     llm_response = call_llm_for_extraction(resume_text)
@@ -124,4 +114,4 @@ def extract_candidate_info(resume_text):
         candidate_info['experience'] = 0
     
     log_step("Information Extraction", f"Extracted: {json.dumps(candidate_info, indent=2)}")
-    return candidate_info #returns dictionary
+    return candidate_info

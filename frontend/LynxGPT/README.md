@@ -44,7 +44,7 @@ The frontend uses a **multi-stage Docker build**:
 
 ```bash
 docker build -t lynxgpt-frontend .
-docker run -p 80:80 lynxgpt-frontend
+docker run -p 3000:3000 lynxgpt-frontend
 ```
 
 ## 🔗 API Integration

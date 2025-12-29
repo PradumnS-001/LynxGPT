@@ -1,15 +1,32 @@
+"""Resume parser module - extracts text from PDFs and candidate info using LangChain."""
+
 import fitz
 import re
 import json
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from Dreamer.dreamer.utils import normalize_text, log_step
 from Dreamer.dreamer import config
-import google.generativeai as genai
 
-genai.configure(api_key=config.GEMINI_API_KEY)
-model = genai.GenerativeModel(config.MODEL_GEMINI)  # e.g., "gemini-1.5-flash" or "gemini-1.5-pro"
+# Initialize LangChain Gemini model (lazy loading to avoid import-time errors)
+_llm = None
+
+def _get_llm():
+    """Get or create the LangChain LLM instance."""
+    global _llm
+    if _llm is None:
+        _llm = ChatGoogleGenerativeAI(
+            model=config.MODEL_GEMINI,
+            google_api_key=config.GEMINI_API_KEY,
+            temperature=0.2,
+            max_output_tokens=2048,
+        )
+    return _llm
 
 
 def extract_text_from_pdf(pdf_path):
+    """Extract raw text from a PDF file."""
     log_step("PDF Extraction", f"Reading file: {pdf_path}")
     try:
         doc = fitz.open(pdf_path)
@@ -26,6 +43,7 @@ def extract_text_from_pdf(pdf_path):
 
 
 def clean_resume_text(raw_text):
+    """Clean and normalize resume text."""
     log_step("Text Cleaning", "Starting text cleanup")
     text = re.sub(r'[•●○■□▪▫◾◦⦿⦾]', '', raw_text)
     text = re.sub(r'Page \d+ of \d+', '', text, flags=re.IGNORECASE)
@@ -39,22 +57,9 @@ def clean_resume_text(raw_text):
     return text
 
 
-# ------------------------------
-# 2. Replace Ollama with Gemini
-# ------------------------------
-def run_gemini(model_name, prompt):
-    try:
-        response = model.generate_content(prompt)
-        print(response)
-        return response.text
-    except Exception as e:
-        log_step("LLM API", f"Gemini API error: {e}")
-        raise
-
-
 def create_extraction_prompt(resume_text):
-    prompt = f"""
-Extract the following information from this resume and return it as a JSON object:
+    """Create the prompt for extracting candidate info."""
+    return f"""Extract the following information from this resume and return it as a JSON object:
 
 1. Title: A list of job titles the candidate is best suited for based on their work history and skills.
 2. Skills: A comma-separated list of technical and professional skills explicitly mentioned in the resume.
@@ -68,25 +73,31 @@ Return ONLY a valid JSON object with these exact keys:
   "Title": "",
   "Skills": "",
   "Description": ""
-}}
-"""
-    return prompt
+}}"""
 
 
 def call_llm_for_extraction(resume_text):
-    log_step("LLM API", "Running Gemini for extraction")
+    """Call LangChain LLM to extract structured info from resume."""
+    log_step("LLM API", "Running LangChain Gemini for extraction")
+    
+    llm = _get_llm()
     prompt = create_extraction_prompt(resume_text)
-
+    
     try:
-        output = run_gemini(config.MODEL_GEMINI, prompt)
-        log_step("LLM API", "Received response from Gemini")
-        return output
+        messages = [
+            SystemMessage(content="You are a helpful AI assistant that extracts structured information from resumes. Always return responses in valid JSON format."),
+            HumanMessage(content=prompt)
+        ]
+        response = llm.invoke(messages)
+        log_step("LLM API", "Received response from LangChain Gemini")
+        return response.content
     except Exception as e:
-        log_step("LLM API", f"Error calling Gemini: {str(e)}")
+        log_step("LLM API", f"Error calling LangChain Gemini: {str(e)}")
         raise
 
 
 def parse_llm_response(llm_response):
+    """Parse JSON from LLM response."""
     try:
         start = llm_response.find("{")
         end = llm_response.rfind("}") + 1
@@ -101,23 +112,28 @@ def parse_llm_response(llm_response):
 
 
 def parse_resume(pdf_path):
+    """Extract and clean text from a resume PDF."""
     raw_text = extract_text_from_pdf(pdf_path)
     cleaned_text = clean_resume_text(raw_text)
     return cleaned_text
 
 
 def extract_candidate_info(file_path):
+    """Main function to extract structured candidate info from a resume PDF."""
     resume_text = parse_resume(file_path)
-    log_step("Information Extraction", "Calling Gemini for extraction")
+    log_step("Information Extraction", "Calling LangChain for extraction")
 
     retries = 5
+    data = {}
     for i in range(retries):
         try:
             llm_response = call_llm_for_extraction(resume_text)
             data = parse_llm_response(llm_response)
             break
         except Exception as e:
-            log_step("LLM Parsing", f"Error parsing JSON: {str(e)}... Retrying")
+            log_step("LLM Parsing", f"Error parsing JSON: {str(e)}... Retrying ({i+1}/{retries})")
+            if i == retries - 1:
+                raise
 
     required = config.RESUME_FIELDS
     for field in required:
