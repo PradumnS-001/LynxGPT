@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-function ListItems({title = "idk wat to put here", id, isStarred, isSelected, onStarToggle, onSelectToggle, onRenameChat}) {
+function ListItems({title = "idk wat to put here", id, isStarred, isSelected, onStarToggle, onSelectToggle, onRenameChat, onDeleteChat}) {
 
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -20,13 +20,20 @@ function ListItems({title = "idk wat to put here", id, isStarred, isSelected, on
     }
   };
 
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    if (onDeleteChat) {
+      onDeleteChat(id);
+    }
+  };
+
   return (
     <li
       key={id}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => {
-        if (!e.target.closest(".star") && !editing){onSelectToggle(id);}
+        if (!e.target.closest(".star") && !e.target.closest(".a3dots") && !editing){onSelectToggle(id);}
       }}
       style={back}
     >
@@ -43,7 +50,7 @@ function ListItems({title = "idk wat to put here", id, isStarred, isSelected, on
         <span onDoubleClick={handleDoubleClick}>{displayTitle}</span>
       )}
 
-      <div>
+            <div>
 
                 <svg xmlns="http://www.w3.org/2000/svg" 
                 width="16" 
@@ -75,11 +82,30 @@ function ListItems({title = "idk wat to put here", id, isStarred, isSelected, on
                     cursor: 'pointer', 
                     display: hovered ? 'inline' : 'none'
                 }} 
-                className="a3dots">
+                className="a3dots"
+                onClick={handleDeleteClick}>
 
-                    <circle cx="12" cy="4" r="2" fill="currentColor"/>
-                    <circle cx="12" cy="12" r="2" fill="currentColor"/>
-                    <circle cx="12" cy="20" r="2" fill="currentColor"/>
+                    {/* Trash / bin icon */}
+                    <path
+                      d="M9 3h6m-7 3h8m-7 0v11a1 1 0 001 1h4a1 1 0 001-1V6"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M10 6V4a1 1 0 011-1h2a1 1 0 011 1v2"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d="M11 10v5M13 10v5"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
                 </svg>
             </div>
     </li>

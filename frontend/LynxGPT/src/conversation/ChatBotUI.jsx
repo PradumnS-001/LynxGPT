@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import "./chatbot.css";
 import botPfp from "../assets/pfp2.png";
 import userPfp from "../assets/pfp1.png";
@@ -19,6 +19,7 @@ function ChatBotUI({ conversationId }) {
   const [input, setInput] = useState("");
   const [showChat, setShowChat] = useState(false);
   const [botTyping, setBotTyping] = useState(false);
+  const typingConversationIdRef = useRef(null);
 
   const [introText, setIntroText] = useState(
     () => INTRO_MESSAGES[Math.floor(Math.random() * INTRO_MESSAGES.length)]
@@ -83,26 +84,39 @@ function ChatBotUI({ conversationId }) {
   useEffect(() => {
     async function loadMessages() {
       if (!conversationId) return;
+      
+      // Don't reset messages if we're currently typing for this conversation
+      if (botTyping && typingConversationIdRef.current === conversationId) {
+        return;
+      }
+      
       const res = await fetch(`${API_URL}/conversations/${conversationId}/messages`);
       const data = await res.json();
       setMessages(data.messages || []);
       setShowChat((data.messages || []).length > 0);
     }
     loadMessages();
-  }, [conversationId]);
+  }, [conversationId, botTyping]);
 
   // When conversation changes (new chat), randomize intro and reset typing state
   useEffect(() => {
+    // Only reset if we're not currently typing for this conversation
+    if (botTyping && typingConversationIdRef.current === conversationId) {
+      return;
+    }
+    
     // defer state updates to avoid synchronous setState in effect
     setTimeout(() => {
       const choice = INTRO_MESSAGES[Math.floor(Math.random() * INTRO_MESSAGES.length)];
       setIntroText(choice);
       setWelcomeIndex(0);
       setIntroIndex(0);
-      // temporarily show typing screen until messages are loaded
-      setShowChat(false);
+      // temporarily show typing screen until messages are loaded (only if not typing)
+      if (!botTyping || typingConversationIdRef.current !== conversationId) {
+        setShowChat(false);
+      }
     }, 0);
-  }, [conversationId]);
+  }, [conversationId, botTyping]);
 
   const stripHtmlIfAny = (text) => {
     if (!text) return "";
@@ -132,6 +146,8 @@ function ChatBotUI({ conversationId }) {
     }, 50);
 
     setBotTyping(true);
+    typingConversationIdRef.current = conversationId;
+    const currentConvId = conversationId; // Capture for comparison
 
     try {
       const res = await fetch(
@@ -143,6 +159,14 @@ function ChatBotUI({ conversationId }) {
         }
       );
       const data = await res.json();
+      
+      // Check if conversation changed while we were waiting for response
+      if (typingConversationIdRef.current !== currentConvId) {
+        // Conversation changed, don't update messages
+        setBotTyping(false);
+        typingConversationIdRef.current = null;
+        return;
+      }
 
       // Backend always returns [user_msg, ...bot_messages]
       // We already added user_msg to state, so always skip index 0
@@ -160,6 +184,12 @@ function ChatBotUI({ conversationId }) {
         return new Promise((resolve) => {
           let i = 0;
           const tick = () => {
+            // Check if conversation changed during typing
+            if (typingConversationIdRef.current !== currentConvId) {
+              resolve();
+              return;
+            }
+            
             i += 1;
             setMessages(prev => {
               const copy = [...prev];
@@ -180,6 +210,13 @@ function ChatBotUI({ conversationId }) {
 
       // iterate incoming messages sequentially
       for (const msg of incoming) {
+        // Check if conversation changed during typing
+        if (typingConversationIdRef.current !== currentConvId) {
+          setBotTyping(false);
+          typingConversationIdRef.current = null;
+          return;
+        }
+        
         if (!msg) continue;
         // If it's a PDF link or an URL-only message, queue it to append after typing
         const txt = (msg.text || "").trim();
@@ -200,6 +237,14 @@ function ChatBotUI({ conversationId }) {
         // wait a tiny pause before typing to feel natural
         // eslint-disable-next-line no-await-in-loop
         await new Promise(r => setTimeout(r, 250));
+        
+        // Check again before typing
+        if (typingConversationIdRef.current !== currentConvId) {
+          setBotTyping(false);
+          typingConversationIdRef.current = null;
+          return;
+        }
+        
         // eslint-disable-next-line no-await-in-loop
         await typeMessage(targetIndex, txt, Math.max(8, Math.floor(800 / Math.max(50, txt.length))));
       }
@@ -213,7 +258,11 @@ function ChatBotUI({ conversationId }) {
       console.error(error);
     }
 
-    setBotTyping(false);
+    // Only clear typing state if we're still on the same conversation
+    if (typingConversationIdRef.current === currentConvId) {
+      setBotTyping(false);
+      typingConversationIdRef.current = null;
+    }
 
     sendBtn.disabled = false;
     sendBtn.classList.remove("disabled");

@@ -1,6 +1,6 @@
 import ListItems from "./list_items";
 
-function Content({starred, notStarred, handleStarToggle, handleSelectToggle, onRenameChat}) {
+function Content({starred, notStarred, handleStarToggle, handleSelectToggle, onRenameChat, onDeleteChat}) {
   return (
     <div className="Content">
       <div className="Starred">
@@ -20,6 +20,7 @@ function Content({starred, notStarred, handleStarToggle, handleSelectToggle, onR
               onStarToggle={handleStarToggle}
               onSelectToggle={handleSelectToggle}
               onRenameChat={onRenameChat}
+              onDeleteChat={onDeleteChat}
             />
           ))}
         </ul>
@@ -39,6 +40,7 @@ function Content({starred, notStarred, handleStarToggle, handleSelectToggle, onR
               onStarToggle={handleStarToggle}
               onSelectToggle={handleSelectToggle}
               onRenameChat={onRenameChat}
+              onDeleteChat={onDeleteChat}
             />
           ))}
         </ul>

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -8,6 +8,7 @@ from datetime import datetime
 import re
 import os
 from dotenv import load_dotenv
+import asyncio
 
 load_dotenv()
 mongodb = os.getenv("MONGODB")
@@ -63,10 +64,58 @@ def strip_html_if_any(text: str) -> str:
     return text
 
 
+def purge_empty_conversations():
+    """Remove conversations that have no messages or only empty messages."""
+    try:
+        # Find all conversations
+        conversations = list(conversations_col.find({}))
+        
+        # Collect IDs of conversations to delete (to avoid modifying while iterating)
+        ids_to_delete = []
+        
+        for conv in conversations:
+            messages = conv.get("messages", [])
+            
+            # Check if conversation has any non-empty messages
+            has_messages = False
+            if messages:
+                for msg in messages:
+                    text = msg.get("text", "")
+                    if text and text.strip() != "":
+                        has_messages = True
+                        break
+            
+            # Mark for deletion if it has no meaningful messages
+            if not has_messages:
+                ids_to_delete.append(conv["_id"])
+        
+        # Delete all empty conversations
+        if ids_to_delete:
+            conversations_col.delete_many({"_id": {"$in": ids_to_delete}})
+    except Exception as e:
+        print(f"Error purging empty conversations: {e}")
+
+
+@app.post("/conversations/purge-empty")
+def purge_empty_conversations_endpoint():
+    """Synchronous endpoint to purge empty conversations."""
+    purge_empty_conversations()
+    return {"status": "success"}
+
+
 @app.get("/conversations", response_model=List[ConversationOut])
 def get_conversations():
     docs = conversations_col.find({})
     return [conv_to_out(d) for d in docs]
+
+
+@app.delete("/conversations/{conv_id}")
+def delete_conversation(conv_id: str):
+    oid = ObjectId(conv_id)
+    result = conversations_col.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Conversation not found")
+    return {"status": "success"}
 
 
 @app.post("/conversations", response_model=ConversationOut)
@@ -83,13 +132,40 @@ def create_conversation():
 
 
 @app.patch("/conversations/{conv_id}", response_model=ConversationOut)
-def rename_conversation(conv_id: str, body: dict):
+def update_conversation(conv_id: str, body: dict):
     oid = ObjectId(conv_id)
+    update_data = {}
+    
+    if "title" in body:
+        update_data["title"] = body["title"]
+    if "isStarred" in body:
+        update_data["isStarred"] = body["isStarred"]
+    
+    if update_data:
+        conversations_col.update_one(
+            {"_id": oid},
+            {"$set": update_data}
+        )
+    
+    doc = conversations_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Conversation not found")
+    return conv_to_out(doc)
+
+
+@app.patch("/conversations/{conv_id}/star", response_model=ConversationOut)
+def toggle_star(conv_id: str):
+    oid = ObjectId(conv_id)
+    doc = conversations_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Conversation not found")
+    
+    new_starred = not doc.get("isStarred", False)
     conversations_col.update_one(
         {"_id": oid},
-        {"$set": {"title": body["title"]}}
+        {"$set": {"isStarred": new_starred}}
     )
-    doc = conversations_col.find_one({"_id": oid})
+    doc["isStarred"] = new_starred
     return conv_to_out(doc)
 
 
@@ -106,6 +182,13 @@ def get_messages(conv_id: str):
 def add_message(conv_id: str, msg: Message):
     oid = ObjectId(conv_id)
 
+    # Load conversation history from database
+    doc = conversations_col.find_one({"_id": oid})
+    if not doc:
+        raise HTTPException(404, "Conversation not found")
+    
+    conversation_history = doc.get("messages", [])
+
     now_iso = datetime.now().isoformat()
 
     user_msg = {
@@ -115,7 +198,8 @@ def add_message(conv_id: str, msg: Message):
     }
 
     try:
-        raw_reply = invoker(msg.text)
+        # Pass conversation history to invoker for memory
+        raw_reply = invoker(msg.text, conversation_history=conversation_history)
     except Exception as e:
         raw_reply = f"Couldn't call the backend agent: {e}"
 

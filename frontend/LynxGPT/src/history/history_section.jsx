@@ -2,7 +2,7 @@ import Content from "./Content";
 import Header from "./Header";
 import Footer from "./Footer";
 
-function HistorySection({ conversations, selectedId, onNewChat, onRenameChat, onSelectChat }) {
+function HistorySection({ conversations, selectedId, onNewChat, onRenameChat, onSelectChat, onStarToggle, onDeleteChat }) {
   const itemsData = conversations.map(c => ({
     id: c.id,
     title: c.title,
@@ -10,10 +10,16 @@ function HistorySection({ conversations, selectedId, onNewChat, onRenameChat, on
     isSelected: c.id === selectedId
   }));
 
-  const handleStarToggle = () => {}; // You will hook backend later
+  const handleStarToggle = (id) => {
+    onStarToggle && onStarToggle(id);
+  };
 
   const handleSelectToggle = (id) => {
     onSelectChat && onSelectChat(id);
+  };
+
+  const handleDeleteChat = (id) => {
+    onDeleteChat && onDeleteChat(id);
   };
 
   return (
@@ -25,6 +31,7 @@ function HistorySection({ conversations, selectedId, onNewChat, onRenameChat, on
         handleStarToggle={handleStarToggle}
         handleSelectToggle={handleSelectToggle}
         onRenameChat={onRenameChat}
+        onDeleteChat={handleDeleteChat}
       />
       <Footer />
     </div>
