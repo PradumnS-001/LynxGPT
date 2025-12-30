@@ -19,26 +19,26 @@
 
 ```
 LynxGPT/
-├── backend/                    # FastAPI Backend
-│   ├── main.py                 # Main API endpoints
-│   ├── agent.py                # LangGraph routing agent
-│   ├── Circulars/              # Circular scraping & retrieval
-│   │   ├── scraper.py          # Web scraper for circulars
-│   │   ├── retriever.py        # RAG-based Q&A
-│   │   └── append_data.py      # Data ingestion
-│   ├── QuestionPapers/         # Question paper processing
-│   │   ├── pdf_processor.py    # PDF text extraction
-│   │   └── query_processor.py  # Query handling
-│   ├── Dreamer/                # Resume-Job Matching
+├── backend/                     # FastAPI Backend
+│   ├── main.py                  # Main API endpoints
+│   ├── agent.py                 # LangGraph routing agent
+│   ├── Circulars/               # Circular scraping & retrieval
+│   │   ├── scraper.py           # Web scraper for circulars
+│   │   ├── retriever.py         # RAG-based Q&A
+│   │   └── append_data.py       # Data ingestion
+│   ├── QuestionPapers/          # Question paper processing
+│   │   ├── pdf_processor.py     # PDF text extraction
+│   │   └── query_processor.py   # Query handling
+│   ├── Dreamer/                 # Resume-Job Matching
 │   │   └── dreamer/
-│   │       ├── app.py          # Resume upload API
-│   │       ├── pipeline.py     # Core matching pipeline
+│   │       ├── app.py           # Resume upload API
+│   │       ├── pipeline.py      # Core matching pipeline
 │   │       ├── resume_parser.py # PDF + LLM extraction
-│   │       ├── similarity.py   # Job ranking
-│   │       └── database.py     # Supabase integration
+│   │       ├── similarity.py    # Job ranking
+│   │       └── database.py      # Supabase integration
 │   ├── Dockerfile
 │   └── requirements.txt
-├── frontend/LynxGPT/           # React Frontend
+├── frontend/LynxGPT/            # React Frontend
 │   ├── src/
 │   ├── Dockerfile
 │   └── nginx.conf
