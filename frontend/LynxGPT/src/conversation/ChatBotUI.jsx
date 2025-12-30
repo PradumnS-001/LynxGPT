@@ -5,6 +5,9 @@ import userPfp from "../assets/pfp1.png";
 
 const API_URL = "http://localhost:8000";
 
+// Global cache for pending messages (sent but not yet in DB)
+const pendingMessages = new Map();
+
 const INTRO_MESSAGES = [
   "What can I help you with today?",
   "What problem are we tackling?",
@@ -20,6 +23,8 @@ function ChatBotUI({ conversationId }) {
   const [showChat, setShowChat] = useState(false);
   const [botTyping, setBotTyping] = useState(false);
   const typingConversationIdRef = useRef(null);
+  const conversationsWithMessagesRef = useRef(new Set()); // Track conversations that have messages
+  const activeConversationIdRef = useRef(conversationId); // Track current visible conversation
 
   const [introText, setIntroText] = useState(
     () => INTRO_MESSAGES[Math.floor(Math.random() * INTRO_MESSAGES.length)]
@@ -39,7 +44,7 @@ function ChatBotUI({ conversationId }) {
     try {
       const audio = new Audio('/sounds/typing.mp3');
       audio.volume = 0.18;
-      audio.play().catch(() => {});
+      audio.play().catch(() => { });
     } catch {
       // ignore
     }
@@ -81,42 +86,75 @@ function ChatBotUI({ conversationId }) {
   }, [introText, showChat, welcomeText]);
 
 
-  useEffect(() => {
-    async function loadMessages() {
-      if (!conversationId) return;
-      
-      // Don't reset messages if we're currently typing for this conversation
-      if (botTyping && typingConversationIdRef.current === conversationId) {
-        return;
-      }
-      
-      const res = await fetch(`${API_URL}/conversations/${conversationId}/messages`);
-      const data = await res.json();
-      setMessages(data.messages || []);
-      setShowChat((data.messages || []).length > 0);
-    }
-    loadMessages();
-  }, [conversationId, botTyping]);
+  const prevConversationIdRef = useRef(null);
 
-  // When conversation changes (new chat), randomize intro and reset typing state
-  useEffect(() => {
-    // Only reset if we're not currently typing for this conversation
-    if (botTyping && typingConversationIdRef.current === conversationId) {
-      return;
+
+  const loadMessages = useCallback(async () => {
+    if (!conversationId) return;
+
+    const res = await fetch(`${API_URL}/conversations/${conversationId}/messages`);
+    const data = await res.json();
+    const loadedMessages = data.messages || [];
+
+    // Merge pending message if exists
+    const pendingText = pendingMessages.get(conversationId);
+    if (pendingText) {
+      // Check if backend already saved it (deduplication)
+      const isSaved = loadedMessages.some(m => m.sender === "gru" && m.text === pendingText);
+      if (isSaved) {
+        pendingMessages.delete(conversationId);
+      } else {
+        // Not saved yet, append locally
+        loadedMessages.push({ sender: "gru", text: pendingText });
+      }
     }
-    
-    // defer state updates to avoid synchronous setState in effect
-    setTimeout(() => {
+
+    setMessages(loadedMessages);
+
+    // Track if this conversation has messages
+    if (loadedMessages.length > 0) {
+      conversationsWithMessagesRef.current.add(conversationId);
+      setShowChat(true);
+    } else if (!conversationsWithMessagesRef.current.has(conversationId)) {
+      // Only show intro if we've never seen messages for this conversation
+      setShowChat(false);
+    }
+  }, [conversationId]);
+
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  useEffect(() => {
+    // Poll for updates if bot is typing for a different conversation
+    // This ensures messages appear when switching back to a conversation with pending responses
+    let pollInterval;
+    if (botTyping && typingConversationIdRef.current !== conversationId) {
+      pollInterval = setInterval(loadMessages, 500);
+    }
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [conversationId, botTyping, loadMessages]);
+
+
+  // When conversation changes (new chat), randomize intro text
+  useEffect(() => {
+    // Check if conversation actually changed (not just a re-render)
+    const conversationChanged = prevConversationIdRef.current !== conversationId;
+    prevConversationIdRef.current = conversationId;
+    activeConversationIdRef.current = conversationId;
+
+    // Only reset intro text if conversation actually changed
+    if (conversationChanged) {
       const choice = INTRO_MESSAGES[Math.floor(Math.random() * INTRO_MESSAGES.length)];
       setIntroText(choice);
       setWelcomeIndex(0);
       setIntroIndex(0);
-      // temporarily show typing screen until messages are loaded (only if not typing)
-      if (!botTyping || typingConversationIdRef.current !== conversationId) {
-        setShowChat(false);
-      }
-    }, 0);
-  }, [conversationId, botTyping]);
+      // Don't set showChat here - let the loadMessages effect handle it
+    }
+  }, [conversationId]);
 
   const stripHtmlIfAny = (text) => {
     if (!text) return "";
@@ -133,6 +171,12 @@ function ChatBotUI({ conversationId }) {
     const sendBtn = document.querySelector(".send-btn");
     sendBtn.disabled = true;
     sendBtn.classList.add("disabled");
+
+    // Mark this conversation as having messages
+    conversationsWithMessagesRef.current.add(conversationId);
+
+    // Cache pending message
+    pendingMessages.set(conversationId, userText);
 
     // Add user message immediately to state
     setMessages(prev => [
@@ -159,7 +203,7 @@ function ChatBotUI({ conversationId }) {
         }
       );
       const data = await res.json();
-      
+
       // Check if conversation changed while we were waiting for response
       if (typingConversationIdRef.current !== currentConvId) {
         // Conversation changed, don't update messages
@@ -185,11 +229,11 @@ function ChatBotUI({ conversationId }) {
           let i = 0;
           const tick = () => {
             // Check if conversation changed during typing
-            if (typingConversationIdRef.current !== currentConvId) {
+            if (activeConversationIdRef.current !== currentConvId) {
               resolve();
               return;
             }
-            
+
             i += 1;
             setMessages(prev => {
               const copy = [...prev];
@@ -211,12 +255,12 @@ function ChatBotUI({ conversationId }) {
       // iterate incoming messages sequentially
       for (const msg of incoming) {
         // Check if conversation changed during typing
-        if (typingConversationIdRef.current !== currentConvId) {
+        if (activeConversationIdRef.current !== currentConvId) {
           setBotTyping(false);
           typingConversationIdRef.current = null;
           return;
         }
-        
+
         if (!msg) continue;
         // If it's a PDF link or an URL-only message, queue it to append after typing
         const txt = (msg.text || "").trim();
@@ -229,6 +273,7 @@ function ChatBotUI({ conversationId }) {
         // append an empty bot message and type into it
         let targetIndex;
         setMessages(prev => {
+          if (activeConversationIdRef.current !== currentConvId) return prev;
           const copy = [...prev, { sender: "bot", text: "" }];
           targetIndex = copy.length - 1;
           return copy;
@@ -237,14 +282,14 @@ function ChatBotUI({ conversationId }) {
         // wait a tiny pause before typing to feel natural
         // eslint-disable-next-line no-await-in-loop
         await new Promise(r => setTimeout(r, 250));
-        
+
         // Check again before typing
-        if (typingConversationIdRef.current !== currentConvId) {
+        if (activeConversationIdRef.current !== currentConvId) {
           setBotTyping(false);
           typingConversationIdRef.current = null;
           return;
         }
-        
+
         // eslint-disable-next-line no-await-in-loop
         await typeMessage(targetIndex, txt, Math.max(8, Math.floor(800 / Math.max(50, txt.length))));
       }
@@ -256,21 +301,24 @@ function ChatBotUI({ conversationId }) {
 
     } catch (error) {
       console.error(error);
+    } finally {
+      // Only clear typing state if we're still on the same conversation
+      if (typingConversationIdRef.current === currentConvId) {
+        setBotTyping(false);
+        typingConversationIdRef.current = null;
+      }
+
+      const btn = document.querySelector(".send-btn");
+      if (btn) {
+        btn.disabled = false;
+        btn.classList.remove("disabled");
+      }
+
+      setTimeout(() => {
+        const area = document.querySelector(".messages-area");
+        if (area) area.scrollTop = area.scrollHeight;
+      }, 100);
     }
-
-    // Only clear typing state if we're still on the same conversation
-    if (typingConversationIdRef.current === currentConvId) {
-      setBotTyping(false);
-      typingConversationIdRef.current = null;
-    }
-
-    sendBtn.disabled = false;
-    sendBtn.classList.remove("disabled");
-
-    setTimeout(() => {
-      const area = document.querySelector(".messages-area");
-      if (area) area.scrollTop = area.scrollHeight;
-    }, 100);
   };
 
   const handlePdfUpload = async (event, pdfType) => {
@@ -320,7 +368,7 @@ function ChatBotUI({ conversationId }) {
     try {
       const audio = new Audio('/sounds/click.mp3');
       audio.volume = 0.18;
-      audio.play().catch(() => {});
+      audio.play().catch(() => { });
     } catch {
       // ignore if not available
     }
@@ -330,7 +378,7 @@ function ChatBotUI({ conversationId }) {
     try {
       const k = new Audio('/sounds/keystroke.mp3');
       k.volume = 0.06;
-      k.play().catch(() => {});
+      k.play().catch(() => { });
     } catch {
       // ignore
     }
@@ -385,18 +433,18 @@ function ChatBotUI({ conversationId }) {
     return () => document.removeEventListener('click', globalClick);
   }, [triggerRipple]);
 
+  const delay = Math.random() * 3;
+
   return (
     <div className="chat-container">
       {!showChat && (
         <div className="typing-screen">
           <div className="typing-inner">
-            <p className="welcome-text">{welcomeText.slice(0, welcomeIndex)}{!welcomeDone && <span className="cursor"></span>}</p>
+            <p className="welcome-text animate-text">{welcomeText.slice(0, welcomeIndex)}{!welcomeDone && <span className="cursor"></span>}</p>
             <p
-              className="intro-text"
+              className="intro-text animate-text"
               style={{
-                background: "linear-gradient(135deg, #338819ff, #9f2f2fff)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent"
+                animationDelay: `${delay}s`
               }}
             >
               {introDisplay}
@@ -455,7 +503,7 @@ function ChatBotUI({ conversationId }) {
             </div>
           ))}
 
-          {botTyping && (
+          {botTyping && typingConversationIdRef.current === conversationId && (
             <div className="message-wrapper left">
               <img src={botPfp} alt="pfp" className="pfp" />
               <div className="message-bubble bot typing-bubble">
@@ -491,7 +539,7 @@ function ChatBotUI({ conversationId }) {
           onChange={(e) => { setInput(e.target.value); playKeySound(); }}
           onKeyDown={(e) => !document.querySelector(".send-btn").disabled && e.key === "Enter" && handleSend()}
         />
-        <button onClick={(e)=>{ triggerRipple(e); handleSend(); }} className="send-btn">Send</button>
+        <button onClick={(e) => { triggerRipple(e); handleSend(); }} className="send-btn">Send</button>
       </div>
     </div>
   );

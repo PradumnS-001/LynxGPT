@@ -43,17 +43,50 @@
   gap: 18px;
 }
 
+.animate-text, .animate-text-onhover:hover{
+  background: linear-gradient(
+    135deg,
+    #de0430, /* Crimson Red */
+    #b66b10, /* Sunset Orange */
+    #f4b812, /* Daisy Yellow */
+    #40d391, /* Alpine Green */
+    #4E9FE5, /* Sky Blue */
+    #FF46A2, /* Hot Pink */
+    #8A2BE2, /* Deep Violet */
+    #8A2BE2, /* Deep Violet */
+    #FF46A2, /* Hot Pink */
+    #4E9FE5, /* Sky Blue */
+    #40d391, /* Alpine Green */
+    #f4b812, /* Daisy Yellow */
+    #b66b10, /* Sunset Orange */
+    #de0430  /* Crimson Red */
+    ) text;
+  opacity: 0.8;
+  -webkit-text-fill-color: transparent;
+  animation: colorCycle 300s linear infinite;
+  background-size: 600% auto;
+}
+.animate-text{
+  letter-spacing: 0.6px;
+}
+.bottom_banner:hover{
+  transform: scale(1.01);
+}
+
 .welcome-text {
   font-size: 64px;
   font-weight: bold;
   color: rgba(255,255,255,0.96);
-  letter-spacing: 0.6px;
-  background: linear-gradient(135deg, rgb(51, 136, 25), rgb(159, 47, 47)) text; 
-  -webkit-text-fill-color: transparent;
   margin-top: 10px;
   margin-bottom: 90px;
   font-family: monospace !important;
 }
+@keyframes colorCycle {
+  to {
+    background-position: 600% center;
+  }
+}
+
 .intro-text {
   font-size: 36px;
   font-weight: lighter;
@@ -72,6 +105,9 @@
   flex-direction: column;
   gap: 12px;
   padding-right: 0.8rem;
+}
+.h2{
+  color:var(--accent-vibrant);
 }
 
 /* MESSAGE STYLES */

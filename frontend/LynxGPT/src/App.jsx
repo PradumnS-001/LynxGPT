@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import HistorySection from "./history/history_section";
 import ConversationSection from "./conversation/conversation_section";
+import BottomBanner from "./bottom_banner";
 
 const API_URL = "http://localhost:8000";
 const MAX_NORMAL_CONVERSATIONS = 64;
@@ -228,6 +229,7 @@ function App() {
         onDeleteChat={handleDeleteChat}
       />
       <ConversationSection conversationId={selectedId} />
+      <BottomBanner />
     </>
   );
 }

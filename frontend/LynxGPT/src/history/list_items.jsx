@@ -1,15 +1,50 @@
 import { useState } from "react";
 
-function ListItems({title = "idk wat to put here", id, isStarred, isSelected, onStarToggle, onSelectToggle, onRenameChat, onDeleteChat}) {
+function ListItems({ title = "idk wat to put here", id, isStarred, isSelected, onStarToggle, onSelectToggle, onRenameChat, onDeleteChat, searchQuery = "" }) {
 
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
   const [localTitle, setLocalTitle] = useState(title);
 
-  let displayTitle = localTitle;
-  if (displayTitle.length > 25) displayTitle = displayTitle.slice(0,25) + "...";
+  // Helper function to highlight matching text
+  const highlightText = (text, query) => {
+    if (!query || query.trim() === "") {
+      return text;
+    }
 
-  const back = isSelected ? {color:"black", backgroundColor:"rgba(var(--accent-rgb), 0.5)"} : {};
+    const parts = [];
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+    let lastIndex = 0;
+    let index = lowerText.indexOf(lowerQuery);
+
+    while (index !== -1) {
+      // Add text before match
+      if (index > lastIndex) {
+        parts.push(text.substring(lastIndex, index));
+      }
+      // Add highlighted match
+      parts.push(
+        <mark key={index} style={{ backgroundColor: "rgba(var(--accent-rgb), 1)", color: "inherit", padding: "0 2px", borderRadius: "2px" }}>
+          {text.substring(index, index + query.length)}
+        </mark>
+      );
+      lastIndex = index + query.length;
+      index = lowerText.indexOf(lowerQuery, lastIndex);
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+
+    return parts;
+  };
+
+  let displayTitle = localTitle;
+  if (displayTitle.length > 25) displayTitle = displayTitle.slice(0, 25) + "...";
+
+  const back = isSelected ? { color: "black", backgroundColor: "rgba(var(--accent-rgb), 0.5)" } : {};
 
   const handleDoubleClick = () => setEditing(true);
 
@@ -33,7 +68,7 @@ function ListItems({title = "idk wat to put here", id, isStarred, isSelected, on
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={(e) => {
-        if (!e.target.closest(".star") && !e.target.closest(".a3dots") && !editing){onSelectToggle(id);}
+        if (!e.target.closest(".star") && !e.target.closest(".a3dots") && !editing) { onSelectToggle(id); }
       }}
       style={back}
     >
@@ -44,70 +79,71 @@ function ListItems({title = "idk wat to put here", id, isStarred, isSelected, on
           onBlur={handleBlurOrEnter}
           onKeyDown={e => e.key === "Enter" && handleBlurOrEnter()}
           autoFocus
-          style={{ background:"transparent", border:"none", color:"inherit", outline:"none", width:"80%" }}
+          style={{ background: "transparent", border: "none", color: "inherit", outline: "none", width: "80%" }}
         />
       ) : (
-        <span onDoubleClick={handleDoubleClick}>{displayTitle}</span>
+        <span onDoubleClick={handleDoubleClick}>{highlightText(displayTitle, searchQuery)}</span>
       )}
 
-            <div>
+      <div>
 
-                <svg xmlns="http://www.w3.org/2000/svg" 
-                width="16" 
-                height="16" 
-                fill="currentColor" 
-                className="bi bi-star-fill star" 
-                viewBox="0 0 18 18" 
+        <svg xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          fill="currentColor"
+          className="bi bi-star-fill star"
+          viewBox="0 0 18 18"
 
-                style={{ 
-                    fill: isStarred ? "#e8c35d" : "none", 
-                    stroke: "#e8c35d", 
-                    cursor: 'pointer' }} 
-                    onClick={() => onStarToggle(id)}>
+          style={{
+            fill: isStarred ? "#e8c35d" : "none",
+            stroke: "#e8c35d",
+            cursor: 'pointer'
+          }}
+          onClick={() => onStarToggle(id)}>
 
-                <path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z"/>
-                </svg>
-                
+          <path d="M3.612 15.443c-.386.198-.824-.149-.746-.592l.83-4.73L.173 6.765c-.329-.314-.158-.888.283-.95l4.898-.696L7.538.792c.197-.39.73-.39.927 0l2.184 4.327 4.898.696c.441.062.612.636.282.95l-3.522 3.356.83 4.73c.078.443-.36.79-.746.592L8 13.187l-4.389 2.256z" />
+        </svg>
 
-                <svg 
-                width="16" 
-                height="16" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                xmlns="http://www.w3.org/2000/svg" 
 
-                style={{
-                    marginLeft: '1rem', 
-                    marginRight: '-1rem', 
-                    cursor: 'pointer', 
-                    display: hovered ? 'inline' : 'none'
-                }} 
-                className="a3dots"
-                onClick={handleDeleteClick}>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
 
-                    {/* Trash / bin icon */}
-                    <path
-                      d="M9 3h6m-7 3h8m-7 0v11a1 1 0 001 1h4a1 1 0 001-1V6"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M10 6V4a1 1 0 011-1h2a1 1 0 011 1v2"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path
-                      d="M11 10v5M13 10v5"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                    />
-                </svg>
-            </div>
+          style={{
+            marginLeft: '1rem',
+            marginRight: '-1rem',
+            cursor: 'pointer',
+            display: hovered ? 'inline' : 'none'
+          }}
+          className="a3dots"
+          onClick={handleDeleteClick}>
+
+          {/* Trash / bin icon */}
+          <path
+            d="M9 3h6m-7 3h8m-7 0v11a1 1 0 001 1h4a1 1 0 001-1V6"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M10 6V4a1 1 0 011-1h2a1 1 0 011 1v2"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M11 10v5M13 10v5"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
     </li>
   );
 }

@@ -46,9 +46,11 @@ def create_rag_chain(api_key):
     - Only answer using the provided context.
     - If unsure or context is insufficient, say:
       "I don't know. Please ask questions corresponding to the course plan."
-    - Answer in great detail (minimum 4-5 lines).
+    - Try your best to answer in great detail (minimum 4-5 lines).
     - Do not refer to the context like ( according to the given context, or anything like that, do not do that )
-
+    - Do not include irrelevant information in the answer (like email or attendence criterion) unless asked sapecifically.
+    - Format your answers properly in bullets.
+    
     Context:
     {context}
 

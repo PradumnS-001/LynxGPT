@@ -22,23 +22,23 @@ function setDynamicAccent() {
   // helper to darken a hex color by factor (0-1)
   function darken(hex, factor = 0.5) {
     const c = hex.replace('#', '');
-    const r = parseInt(c.substring(0,2),16);
-    const g = parseInt(c.substring(2,4),16);
-    const b = parseInt(c.substring(4,6),16);
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
     const nr = Math.max(0, Math.floor(r * factor));
     const ng = Math.max(0, Math.floor(g * factor));
     const nb = Math.max(0, Math.floor(b * factor));
-    return `#${nr.toString(16).padStart(2,'0')}${ng.toString(16).padStart(2,'0')}${nb.toString(16).padStart(2,'0')}`;
+    return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
   }
 
   const vibrant = choice.hex;
   const darkest = darken(vibrant, 0.28); // darkest shade for background
 
   function hexToRgb(hex) {
-    const c = hex.replace('#','');
-    const r = parseInt(c.substring(0,2),16);
-    const g = parseInt(c.substring(2,4),16);
-    const b = parseInt(c.substring(4,6),16);
+    const c = hex.replace('#', '');
+    const r = parseInt(c.substring(0, 2), 16);
+    const g = parseInt(c.substring(2, 4), 16);
+    const b = parseInt(c.substring(4, 6), 16);
     return `${r}, ${g}, ${b}`;
   }
 
@@ -65,14 +65,14 @@ function setDynamicAccent() {
   // inject 7 ethereal orbs at 7 fixed positions with randomized radii (scale 0.9-1.1)
   if (!document.querySelector('.ethereal-orb-1')) {
     const positions = [
-  { left: '25%', top: '8%' },    // Top Left
-  { left: '60%', top: '12%' },    // Top Center (High)
-  { left: '85%', top: '25%' },    // Top Right (Lower than Top Left)
-  { left: '10%', top: '55%' },    // Mid Left
-  { left: '45%', top: '50%' },    // Center (Slightly offset)
-  { left: '80%', top: '75%' },    // Bottom Right
-  { left: '25%', top: '85%' }     // Bottom Left (Low)
-];
+      { left: '25%', top: '8%' },    // Top Left
+      { left: '60%', top: '12%' },    // Top Center (High)
+      { left: '85%', top: '25%' },    // Top Right (Lower than Top Left)
+      { left: '10%', top: '55%' },    // Mid Left
+      { left: '45%', top: '50%' },    // Center (Slightly offset)
+      { left: '80%', top: '75%' },    // Bottom Right
+      { left: '25%', top: '85%' }     // Bottom Left (Low)
+    ];
 
     for (let i = 1; i <= 7; i++) {
       const orb = document.createElement('div');

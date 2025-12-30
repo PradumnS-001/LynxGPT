@@ -174,4 +174,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Made with ❤️ for NITT Students**
+**Made with ❤️ by Spider's ML Team**
