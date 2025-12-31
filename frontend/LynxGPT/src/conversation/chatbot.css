@@ -46,31 +46,23 @@
 .animate-text, .animate-text-onhover:hover{
   background: linear-gradient(
     135deg,
-    #de0430, /* Crimson Red */
-    #b66b10, /* Sunset Orange */
-    #f4b812, /* Daisy Yellow */
-    #40d391, /* Alpine Green */
-    #4E9FE5, /* Sky Blue */
-    #FF46A2, /* Hot Pink */
-    #8A2BE2, /* Deep Violet */
-    #8A2BE2, /* Deep Violet */
-    #FF46A2, /* Hot Pink */
-    #4E9FE5, /* Sky Blue */
-    #40d391, /* Alpine Green */
-    #f4b812, /* Daisy Yellow */
-    #b66b10, /* Sunset Orange */
-    #de0430  /* Crimson Red */
+    var(--accent-vibrant),
+    var(--accent-vibrant-prev),
+    var(--accent-vibrant),
+    var(--accent-vibrant-next),
+    var(--accent-vibrant)
     ) text;
   opacity: 0.8;
   -webkit-text-fill-color: transparent;
-  animation: colorCycle 300s linear infinite;
-  background-size: 600% auto;
+  animation: colorCycle 180s linear infinite;
+  background-size: 1000% auto;
+  filter: drop-shadow(3.1px 3.1px 1px rgba(var(--accent-rgb), 0.38));
 }
 .animate-text{
   letter-spacing: 0.6px;
 }
 .bottom_banner:hover{
-  transform: scale(1.01);
+  transform: scale(1.02);
 }
 
 .welcome-text {

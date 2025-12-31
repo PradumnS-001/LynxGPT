@@ -5,20 +5,33 @@ import App from './App.jsx'
 
 function setDynamicAccent() {
   const accents = [
-    { name: 'electric-cyan', hex: '#00F2FF' },
-    { name: 'sunset-orange', hex: '#FF8C00' },
-    { name: 'crimson-red', hex: '#FF0033' },
     { name: 'deep-violet', hex: '#8A2BE2' },
     { name: 'hot-pink', hex: '#FF46A2' },
-    { name: 'neon-emerald', hex: '#50FFB1' },
     { name: 'sky-blue', hex: '#4E9FE5' },
-    { name: 'alpine-green', hex: '#1B5448' },
-    { name: 'daisy-yellow', hex: '#F8D675' }
+    { name: 'neon-emerald', hex: '#50FFB1' },
+    { name: 'daisy-yellow', hex: '#F8D675' },
+    { name: 'sunset-orange', hex: '#FF8C00' },
+    { name: 'crimson-red', hex: '#FF0033' }
   ];
 
   // pick exactly one accent per page load
-  const choice = accents[Math.floor(Math.random() * accents.length)];
-
+  const choice_num = Math.floor(Math.random() * accents.length);
+  const choice = accents[choice_num];
+  let choice_prev = choice_num - 1;
+  let choice_next = choice_num + 1;
+  if (choice_num === 0) {
+    choice_prev = { name: 'sky-blue', hex: '#3214e0ff' };
+    choice_next = accents[choice_next];
+  }
+  if (choice_num === accents.length - 1) {
+    choice_prev = accents[choice_prev];
+    choice_next = { name: 'daisy-yellow', hex: '#F8D675' };
+  }
+  if (choice_num != 0 && choice_num != accents.length - 1) {
+    choice_prev = accents[choice_prev];
+    choice_next = accents[choice_next];
+  }
+  
   // helper to darken a hex color by factor (0-1)
   function darken(hex, factor = 0.5) {
     const c = hex.replace('#', '');
@@ -32,6 +45,8 @@ function setDynamicAccent() {
   }
 
   const vibrant = choice.hex;
+  const vibrant_prev = choice_prev.hex;
+  const vibrant_next = choice_next.hex;
   const darkest = darken(vibrant, 0.28); // darkest shade for background
 
   function hexToRgb(hex) {
@@ -45,6 +60,8 @@ function setDynamicAccent() {
   const root = document.documentElement;
   root.style.setProperty('--accent-name', choice.name);
   root.style.setProperty('--accent-vibrant', vibrant);
+  root.style.setProperty('--accent-vibrant-prev', vibrant_prev);
+  root.style.setProperty('--accent-vibrant-next', vibrant_next);
   root.style.setProperty('--accent-dark', darkest);
   root.style.setProperty('--accent-border', `rgba(${hexToRgb(vibrant)}, 0.2)`);
   root.style.setProperty('--accent-glow', vibrant);
