@@ -56,22 +56,25 @@
   -webkit-text-fill-color: transparent;
   animation: colorCycle 180s linear infinite;
   background-size: 1000% auto;
-  filter: drop-shadow(3.1px 3.1px 1px rgba(var(--accent-rgb), 0.38));
+  filter: drop-shadow(3.2px 3.2px 1.1px #000000);
+  font-family: 'Times New Roman', Times, serif !important;
 }
 .animate-text{
   letter-spacing: 0.6px;
+}
+.animate-text-onhover{
+  font-family: 'Times New Roman', Times, serif !important;
 }
 .bottom_banner:hover{
   transform: scale(1.02);
 }
 
 .welcome-text {
-  font-size: 64px;
-  font-weight: bold;
+  font-size: 56px;
+  font-weight: 500;
   color: rgba(255,255,255,0.96);
-  margin-top: 10px;
+  margin-top: 25px;
   margin-bottom: 90px;
-  font-family: monospace !important;
 }
 @keyframes colorCycle {
   to {
@@ -81,10 +84,9 @@
 
 .intro-text {
   font-size: 36px;
-  font-weight: lighter;
+  font-weight: 100;
   color: rgba(255,255,255,0.92);
-  margin-top: 110px;
-  font-family: monospace !important;
+  margin-top: 120px;
 }
 /* optional decorative radial blobs inserted by index.css */
 .chat-background-blobs{ display:none; }
@@ -100,6 +102,7 @@
 }
 .h2{
   color:var(--accent-vibrant);
+  font-family: 'Times New Roman', Times, serif !important;
 }
 
 /* MESSAGE STYLES */

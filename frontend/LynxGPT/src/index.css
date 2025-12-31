@@ -12,7 +12,7 @@
   --accent-dark: #00121a;
   --accent-border: var(--accent-vibrant);
   --accent-glow: var(--accent-vibrant);
-  --bg-charcoal: #121212;
+  --bg-charcoal: #070707;
   --glass-bg: rgba(20,20,20,0.8);
   --glass-border-opacity: 0.9;
 }
@@ -66,7 +66,7 @@ body::after{
   display: flex;
   justify-content: center;
   align-items: center;
-  color: var(--accent-vibrant);
+  color: var(--accent-vibrant) !important;
   font-size: 1.2rem;
   padding: 5px;
   border-radius: 10px;
@@ -99,7 +99,7 @@ body::after{
   pointer-events: none;
   opacity: 1;
   mix-blend-mode: screen;
-  background: radial-gradient(circle, rgba(var(--accent-rgb),0.4), rgba(var(--accent-rgb),0));
+  background: radial-gradient(circle, rgba(var(--accent-rgb),0.36), rgba(var(--accent-rgb),0));
   animation: float-orb 6s ease-in-out infinite;
   z-index: 0;
 }
@@ -116,11 +116,11 @@ body::after{
 .conversation-section, .history-section { position: relative; z-index: 3; }
 
 @keyframes float-orb {
-  0% { transform: translateY(0) scale(1); opacity: 1 }
-  25% { transform: translateY(-12px) scale(1.05); opacity: 0.5 }
-  50% { transform: translateY(0) scale(0.98); opacity: 0 }
-  75% { transform: translateY(10px) scale(1.02); opacity: 0.5 }
-  100% { transform: translateY(0) scale(1); opacity: 1 }
+  0% { transform: translateY(0) scale(var(--orb-scale, 1)); opacity: 1 }
+  25% { transform: translateY(-12px) scale(calc(var(--orb-scale, 1) * 1.05)); opacity: 0.5 }
+  50% { transform: translateY(0) scale(calc(var(--orb-scale, 1) * 0.98)); opacity: 0 }
+  75% { transform: translateY(10px) scale(calc(var(--orb-scale, 1) * 1.02)); opacity: 0.5 }
+  100% { transform: translateY(0) scale(var(--orb-scale, 1)); opacity: 1 }
 }
 
 @keyframes float-blob-1 {

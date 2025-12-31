@@ -31,7 +31,7 @@ function setDynamicAccent() {
     choice_prev = accents[choice_prev];
     choice_next = accents[choice_next];
   }
-  
+
   // helper to darken a hex color by factor (0-1)
   function darken(hex, factor = 0.5) {
     const c = hex.replace('#', '');
@@ -47,7 +47,7 @@ function setDynamicAccent() {
   const vibrant = choice.hex;
   const vibrant_prev = choice_prev.hex;
   const vibrant_next = choice_next.hex;
-  const darkest = darken(vibrant, 0.28); // darkest shade for background
+  const darkest = darken(vibrant, 0.12); // darkest shade for background
 
   function hexToRgb(hex) {
     const c = hex.replace('#', '');
@@ -82,24 +82,40 @@ function setDynamicAccent() {
   // inject 7 ethereal orbs at 7 fixed positions with randomized radii (scale 0.9-1.1)
   if (!document.querySelector('.ethereal-orb-1')) {
     const positions = [
-      { left: '25%', top: '8%' },    // Top Left
-      { left: '60%', top: '12%' },    // Top Center (High)
-      { left: '85%', top: '25%' },    // Top Right (Lower than Top Left)
-      { left: '10%', top: '55%' },    // Mid Left
-      { left: '45%', top: '50%' },    // Center (Slightly offset)
-      { left: '80%', top: '75%' },    // Bottom Right
-      { left: '25%', top: '85%' }     // Bottom Left (Low)
+      { left: '25%', top: '8%', delay: 0 },    // Top Left
+      { left: '60%', top: '12%', delay: 1.4 },    // Top Center (High)
+      { left: '85%', top: '25%', delay: 2.8 },    // Top Right (Lower than Top Left)
+      { left: '10%', top: '55%', delay: 1 },    // Mid Left
+      { left: '45%', top: '50%', delay: 3.4 },    // Center (Slightly offset)
+      { left: '80%', top: '75%', delay: 2.2 },    // Bottom Right
+      { left: '25%', top: '85%', delay: 4 }     // Bottom Left (Low)
     ];
 
     for (let i = 1; i <= 7; i++) {
       const orb = document.createElement('div');
       orb.className = `ethereal-orb ethereal-orb-${i}`;
-      // apply the fixed position from the list
+
       const pos = positions[i - 1];
-      Object.entries(pos).forEach(([k, v]) => { orb.style[k] = v; });
-      // randomize radius (scale) between 0.75 and 1.0
-      const randomScale = 0.6 + Math.random() * 0.6;
-      orb.style.transform = `scale(${randomScale})`;
+
+      // Random offset for position (approx +/- 20px)
+      const randomX = Math.floor(Math.random() * 40 - 20);
+      const randomY = Math.floor(Math.random() * 40 - 20);
+
+      orb.style.left = `calc(${pos.left} + ${randomX}px)`;
+      orb.style.top = `calc(${pos.top} + ${randomY}px)`;
+
+      // Random animation delay: base delay +/- 1s
+      const randomDelayOffset = (Math.random() * 2) - 1;
+      const finalDelay = pos.delay + randomDelayOffset;
+      orb.style.animationDelay = `${finalDelay}s`;
+
+      // Random scale 0.8 to 1.2
+      const randomScale = (Math.random() * 0.6 + 0.6).toFixed(2);
+      orb.style.setProperty('--orb-scale', randomScale);
+
+      // Prevent global transition from causing "exploding" effect on mount
+      orb.style.transition = 'none';
+
       document.body.appendChild(orb);
     }
   }
