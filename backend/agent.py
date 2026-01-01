@@ -1,4 +1,4 @@
-from typing import List, Literal, TypedDict, Any, Optional
+from typing import List, Literal, TypedDict, Any, Optional, Dict
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
@@ -13,8 +13,12 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+from pathlib import Path
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 google_api_key = os.getenv("GOOGLE_API_KEY")
+if google_api_key:
+    os.environ["GOOGLE_API_KEY"] = google_api_key
 
 # ---------------------------------------------------
 #  CONFIG  (Gemini Flash 2.5)
@@ -31,18 +35,16 @@ llm = ChatGoogleGenerativeAI(
 # ---------------------------------------------------
 class State(TypedDict):
     messages: List[BaseMessage]
-    # NEW: We store the current query string separately so non-memory nodes
-    # don't need to parse the full message history.
     current_input: str
-    route: Literal["question_paper", "course_plan", "memory", "out_of_scope"]
-    # Optional place to store structured results from nodes (e.g. retriever dict)
+    route: Literal["question_paper", "course_plan", "memory", "resume_qa", "out_of_scope"]
     last_result: Optional[Any]
+    resume_context: Optional[Dict]  # Added for Dreamer integration
 
 # ---------------------------------------------------
 #  ROUTER MODEL OUTPUT SCHEMA
 # ---------------------------------------------------
 class Route(BaseModel):
-    choice: Literal["question_paper", "course_plan", "memory", "out_of_scope"]
+    choice: Literal["question_paper", "course_plan", "memory", "resume_qa", "out_of_scope"]
 
 router_llm = llm.with_structured_output(Route)
 
@@ -58,23 +60,18 @@ def classifier_node(state: State) -> State:
 
     system = SystemMessage(
         content=(
-            "You are a strict router that chooses ONE of four labels based ONLY on the latest user question:\n"
+            "You are a strict router that chooses ONE of five labels based ONLY on the latest user question:\n"
             "- 'question_paper': if the user is asking for question papers, CT papers, exam papers, past papers,\n"
-            "  or similar (e.g., 'give me a question paper of digital electronics',\n"
-            "  'do you have papers available on automata?').\n"
+            "  or similar.\n"
             "- 'course_plan': if the user is asking for course plans, syllabus, circulars, CCM, course structure,\n"
-            "  exam pattern, or related topics (e.g., 'give me the course plan for digital image processing',\n"
-            "  'syllabus for EEPE37').\n"
-            "- 'memory': if the user is asking about previous parts of the SAME conversation, such as\n"
-            "  'What did I ask 2 responses ago?', 'Summarize our entire conversation', 'What did I say earlier?',\n"
-            "  'What were my last 3 questions?'. These are meta-questions about the chat history.\n"
+            "  exam pattern, or related topics.\n"
+            "- 'memory': if the user is asking about previous parts of the SAME conversation (e.g., 'What did I ask?') OR just saying 'hi'/'hello' (greetings).\n"
+            "- 'resume_qa': if the user is asking clarifying questions about their uploaded resume, skills, experience, or job recommendations.\n"
             "- 'out_of_scope': for everything else not matching the above.\n"
             "Return ONLY one label, with no explanation."
         )
     )
 
-    # We wrap the string in a HumanMessage just for the LLM call, 
-    # but we are NOT using the history list.
     result = router_llm.invoke([system, HumanMessage(content=user_query)])
     print(f"Router choice: {result.choice}")
     return {**state, "route": result.choice}
@@ -83,56 +80,50 @@ def classifier_node(state: State) -> State:
 # MAIN TASK FUNCTIONS
 # ---------------------------------------------------
 def question_paper_fn(state: State) -> str:
-    """
-    Handle question paper queries. 
-    Uses ONLY state['current_input']. Does not look at history.
-    """
-    print("Routing to question_paper_fn (QuestionPapers)...")
+    print("Routing to question_paper_fn...")
     from QuestionPapers.query_processor import get_link
-    
-    # Direct access to the string, no history parsing
-    question = state["current_input"]
-    
-    print(f"Question paper query: {question}")
-    response = get_link(question)
-    print(f"Question paper response: {response}")
-    return response
-
+    resp = get_link(state["current_input"])
+    return resp
 
 def course_plan_fn(state: State):
-    """
-    Handle course plan / syllabus queries.
-    Uses ONLY state['current_input']. Does not look at history.
-    """
     from Circulars.retriever import ask_question_once
-    
-    # Direct access to the string, no history parsing
-    question = state["current_input"]
-    
-    print(f"Course plan / circular query: {question}")
-    response = ask_question_once(question)
-    return response
-
+    resp = ask_question_once(state["current_input"])
+    return resp
 
 def memory_fn(state: State) -> str:
+    print("Routing to memory_fn...")
+    system = SystemMessage(
+        content=(
+            "You are a conversation memory assistant. Use only the provided history to answer meta-questions."
+        )
+    )
+    convo = [system] + state["messages"]
+    result = llm.invoke(convo)
+    return str(result.content)
+
+def resume_qa_fn(state: State) -> str:
     """
-    Answer meta-questions about the conversation history.
-    This is the ONLY function that accesses state['messages'].
+    Answer questions based on the candidate's resume context.
     """
-    print("Routing to memory_fn (conversation memory)...")
+    print("Routing to resume_qa_fn...")
+    
+    context = state.get("resume_context")
+    if not context:
+        return "I don't see a resume uploaded for this conversation yet. Please upload one first!"
+
+    # Format context as string
+    context_str = str(context)
 
     system = SystemMessage(
         content=(
-            "You are a conversation memory assistant.\n"
-            "You are given the full chat history between the user and the assistant as context.\n"
-            "The LAST human message is a meta-question about that history (e.g., "
-            "'What did I ask 2 responses ago?', 'Summarize our entire conversation').\n"
-            "Use ONLY the provided messages to answer questions about the conversation.\n"
-            "If the requested information is not present, say you cannot find it in the history."
+            "You are a helpful career assistant. The user has uploaded their resume.\n"
+            f"Here is the parsed information from their resume: {context_str}\n\n"
+            "Answer the user's question using ONLY this information. Be professional and encouraging."
         )
     )
-
-    # We use the full messages list here because this is the memory node.
+    
+    # We use messages here so the LLM has context of the conversation
+    # But specifically instruct it to use the resume info
     convo = [system] + state["messages"]
     result = llm.invoke(convo)
     return str(result.content)
@@ -144,11 +135,8 @@ def question_paper_node(state: State) -> State:
     answer = question_paper_fn(state)
     return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))]}
 
-
 def course_plan_node(state: State) -> State:
     answer = course_plan_fn(state)
-
-    # If retriever returned a structured dict, append the answer and each link as separate AI messages
     if isinstance(answer, dict):
         msgs = []
         ans_text = answer.get("answer") or ""
@@ -156,15 +144,15 @@ def course_plan_node(state: State) -> State:
         for link in answer.get("links", []):
             msgs.append(AIMessage(content=str(link)))
         return {**state, "messages": state["messages"] + msgs, "last_result": answer}
-
-    # otherwise assume string
     return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))], "last_result": None}
-
 
 def memory_node(state: State) -> State:
     answer = memory_fn(state)
     return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))]}
 
+def resume_qa_node(state: State) -> State:
+    answer = resume_qa_fn(state)
+    return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))]}
 
 def out_of_scope_node(state: State) -> State:
     msg = "Sorry! I'm not able to handle that — could you try a different question?"
@@ -179,6 +167,7 @@ builder.add_node("classifier", classifier_node)
 builder.add_node("question_paper", question_paper_node)
 builder.add_node("course_plan", course_plan_node)
 builder.add_node("memory", memory_node)
+builder.add_node("resume_qa", resume_qa_node)
 builder.add_node("out_of_scope", out_of_scope_node)
 
 builder.set_entry_point("classifier")
@@ -193,6 +182,7 @@ builder.add_conditional_edges(
         "question_paper": "question_paper",
         "course_plan": "course_plan",
         "memory": "memory",
+        "resume_qa": "resume_qa",
         "out_of_scope": "out_of_scope"
     },
 )
@@ -200,15 +190,15 @@ builder.add_conditional_edges(
 builder.add_edge("question_paper", END)
 builder.add_edge("course_plan", END)
 builder.add_edge("memory", END)
+builder.add_edge("resume_qa", END)
 builder.add_edge("out_of_scope", END)
 
 graph = builder.compile()
 
-def invoker(user_input: str, conversation_history: Optional[List[dict]] = None):
+def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, resume_context: Optional[Dict] = None):
     """
-    Invoke the agent with user input and optional conversation history.
+    Invoke the agent with user input, history, and optional resume context.
     """
-    # Convert conversation history to LangChain messages
     messages = []
     
     if conversation_history:
@@ -217,56 +207,38 @@ def invoker(user_input: str, conversation_history: Optional[List[dict]] = None):
             text = msg.get("text", "")
             if not text or not text.strip():
                 continue
-                
             if sender == "gru" or sender == "user":
                 messages.append(HumanMessage(content=text))
             elif sender == "bot" or sender == "ai":
                 messages.append(AIMessage(content=text))
     
-    # Add the current user message to history
     messages.append(HumanMessage(content=user_input))
     
-    # Initialize state. 
-    # We explicitly set 'current_input' so nodes don't rely on 'messages' to find it.
     init_state: State = {
         "messages": messages,
         "current_input": user_input,
         "last_result": None,
-        # route needs a default, though classifier will overwrite it immediately
-        "route": "out_of_scope" 
+        "route": "out_of_scope",
+        "resume_context": resume_context # Injected context
     }
 
     result = graph.invoke(init_state)
-    print("Final state messages:", result["messages"])
-
-    # If the graph stored a structured last_result (e.g. {'answer', 'links'}), return it directly
+    
     if result.get("last_result"):
         return result.get("last_result")
-
-    # Otherwise, return the last AI message content
-    bot_reply = result["messages"][-1].content
-    print("Bot reply:", bot_reply)
-    return bot_reply
+    
+    return result["messages"][-1].content
 
 # ---------------------------------------------------
 # CLI DEMO
 # ---------------------------------------------------
 if __name__ == "__main__":
     print("Gemini Router Agent Ready 🚀")
-    conversation_history = []
+    # Simulation logic omitted for brevity
     while True:
-        user_input = input("\nYou: ")
-        if user_input.lower() in {"exit", "quit"}:
+        try:
+            user_input = input("\nYou: ")
+            if user_input.lower() in {"exit", "quit"}: break
+            print("Bot:", invoker(user_input))
+        except KeyboardInterrupt:
             break
-        
-        bot_reply = invoker(user_input, conversation_history=conversation_history)
-        print("Bot:", bot_reply)
-        
-        # Update conversation history for next iteration
-        conversation_history.append({"sender": "gru", "text": user_input})
-        if isinstance(bot_reply, dict):
-            conversation_history.append({"sender": "bot", "text": bot_reply.get("answer", "")})
-            for link in bot_reply.get("links", []):
-                conversation_history.append({"sender": "bot", "text": str(link)})
-        else:
-            conversation_history.append({"sender": "bot", "text": str(bot_reply)})

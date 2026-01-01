@@ -363,6 +363,24 @@ function ChatBotUI({ conversationId }) {
     }, 100);
   };
 
+  const handleEndSession = async (e) => {
+    if (e) triggerRipple(e);
+    if (!conversationId) return;
+
+    try {
+      await fetch(`${API_URL}/conversations/${conversationId}/end`, {
+        method: "POST"
+      });
+      alert("Session saved to database!");
+      // Optional: clear messages or redirect
+      // setMessages([]); 
+      // setShowChat(false);
+    } catch (err) {
+      console.error("Failed to end session:", err);
+      alert("Error saving session.");
+    }
+  };
+
   // Audio hook placeholder: will be wired to a real audio file later
   function playClickSound() {
     try {
@@ -529,6 +547,10 @@ function ChatBotUI({ conversationId }) {
             <input type="file" accept="application/pdf" hidden
               onChange={(e) => handlePdfUpload(e, "QuestionPapersPDF")} />
           </label>
+
+          <button className="pdf-btn" onClick={handleEndSession}>
+            💾 End Session
+          </button>
         </div>
 
         <input

@@ -10,12 +10,20 @@ import os
 from dotenv import load_dotenv
 import asyncio
 
-load_dotenv()
+from pathlib import Path
+import traceback  # Import traceback
+
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 mongodb = os.getenv("MONGODB")
+print(f"DEBUG: Loaded env from {env_path}")
+print(f"DEBUG: REDIS_HOST={os.getenv('REDIS_HOST')}")
+print(f"DEBUG: REDIS_PORT={os.getenv('REDIS_PORT')}")
 
 from agent import invoker
 from QuestionPapers.pdf_processor import process_single_pdf
 from Dreamer.dreamer.app import run_resume_pipeline
+from database.redis_client import RedisClient
 
 client = MongoClient(mongodb)
 db = client["chat_app"]
@@ -171,70 +179,141 @@ def toggle_star(conv_id: str):
 
 @app.get("/conversations/{conv_id}/messages")
 def get_messages(conv_id: str):
-    oid = ObjectId(conv_id)
-    doc = conversations_col.find_one({"_id": oid})
-    if not doc:
-        raise HTTPException(404, "Conversation not found")
-    return {"messages": doc.get("messages", [])}
+    # Try Redis first
+    messages = RedisClient.get_chat_history(conv_id)
+    
+    # Check if we need to hydrate from Mongo
+    if not messages:
+        # Fallback to Mongo if empty (e.g. old chat or expired)
+        oid = ObjectId(conv_id)
+        doc = conversations_col.find_one({"_id": oid})
+        if not doc:
+            raise HTTPException(404, "Conversation not found")
+        messages = doc.get("messages", [])
+        
+        # Hydrate Chat History to Redis
+        for msg in messages:
+            RedisClient.add_message(conv_id, msg)
+            
+        # Hydrate Resume Context to Redis (if exists)
+        candidate_info = doc.get("candidate_info")
+        if candidate_info:
+             RedisClient.save_resume_context(conv_id, candidate_info)
+             print(f"Hydrated resume context for {conv_id}")
+            
+    return {"messages": messages}
 
 
 @app.post("/conversations/{conv_id}/messages")
 def add_message(conv_id: str, msg: Message):
-    oid = ObjectId(conv_id)
-
-    # Load conversation history from database
-    doc = conversations_col.find_one({"_id": oid})
-    if not doc:
-        raise HTTPException(404, "Conversation not found")
-    
-    conversation_history = doc.get("messages", [])
-
-    now_iso = datetime.now().isoformat()
-
-    user_msg = {
-        "sender": msg.sender,
-        "text": msg.text,
-        "time": now_iso,
-    }
-
     try:
-        # Pass conversation history to invoker for memory
-        raw_reply = invoker(msg.text, conversation_history=conversation_history)
+        # Retrieve history from Redis
+        conversation_history = RedisClient.get_chat_history(conv_id)
+        
+        # Check for resume context in Redis
+        resume_context = RedisClient.get_resume_context(conv_id)
+    
+        now_iso = datetime.now().isoformat()
+    
+        user_msg = {
+            "sender": msg.sender,
+            "text": msg.text,
+            "time": now_iso,
+        }
+        
+        # Store User Message in Redis
+        RedisClient.add_message(conv_id, user_msg)
+        
+        # Pass history + resume context to invoker
+        try:
+            raw_reply = invoker(
+                msg.text, 
+                conversation_history=conversation_history,
+                resume_context=resume_context
+            )
+        except Exception as e:
+            raw_reply = f"Couldn't call the backend agent: {e}"
+            traceback.print_exc()
+    
+        now_iso = datetime.now().isoformat()
+        bot_messages = []
+    
+        # If the agent returned a structured response (dict with 'answer' and 'links')
+        if isinstance(raw_reply, dict):
+            answer_text = strip_html_if_any(str(raw_reply.get("answer", "")))
+            
+            # Main bot answer
+            main_bot_msg = {"sender": "bot", "text": answer_text, "time": now_iso}
+            bot_messages.append(main_bot_msg)
+            RedisClient.add_message(conv_id, main_bot_msg)
+    
+            # Append ONE link-only bot message per URL
+            for link in raw_reply.get("links", []):
+                link_msg = {"sender": "bot", "text": str(link), "time": datetime.now().isoformat()}
+                bot_messages.append(link_msg)
+                RedisClient.add_message(conv_id, link_msg)
+    
+        else:
+            bot_clean = strip_html_if_any(str(raw_reply))
+            bot_msg = {"sender": "bot", "text": bot_clean, "time": now_iso}
+            bot_messages.append(bot_msg)
+            RedisClient.add_message(conv_id, bot_msg)
+    
+        # Return new messages
+        all_new_messages = [user_msg] + bot_messages
+        return {"messages": all_new_messages}
+
     except Exception as e:
-        raw_reply = f"Couldn't call the backend agent: {e}"
+        print("CRITICAL ERROR in add_message:")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-    now_iso = datetime.now().isoformat()
 
-    bot_messages = []
+def flush_conversation_to_mongo(conv_id: str):
+    """
+    Persist Redis chat history AND resume context to MongoDB.
+    This effectively 'saves' the session.
+    """
+    try:
+        messages = RedisClient.get_chat_history(conv_id)
+        resume_context = RedisClient.get_resume_context(conv_id) # Get from Redis
+        
+        if not messages and not resume_context:
+            return  # Nothing to save
 
-    # If the agent returned a structured response (dict with 'answer' and 'links')
-    if isinstance(raw_reply, dict):
-        answer_text = strip_html_if_any(str(raw_reply.get("answer", "")))
-        bot_messages.append({"sender": "bot", "text": answer_text, "time": now_iso})
+        oid = ObjectId(conv_id)
+        
+        # Prepare update data
+        update_data = {
+            "last_updated": datetime.now().isoformat()
+        }
+        if messages:
+             update_data["messages"] = messages
+        if resume_context:
+             update_data["candidate_info"] = resume_context
 
-        # Append ONE link-only bot message per URL
-        for link in raw_reply.get("links", []):
-            bot_messages.append({"sender": "bot", "text": str(link), "time": datetime.now().isoformat()})
-
-        # Push user message and then bot messages
+        # Overwrite/Update MongoDB
         conversations_col.update_one(
             {"_id": oid},
-            {"$push": {"messages": {"$each": [user_msg] + bot_messages}}}
+            {"$set": update_data}
         )
+        print(f"Flushed session (msgs={len(messages)}, resume={bool(resume_context)}) to MongoDB for {conv_id}")
+    except Exception as e:
+        print(f"Error flushing to Mongo: {e}")
+        traceback.print_exc()
 
-    else:
-        bot_clean = strip_html_if_any(str(raw_reply))
-        bot_msg = {"sender": "bot", "text": bot_clean, "time": now_iso}
-        bot_messages.append(bot_msg)
 
-        conversations_col.update_one(
-            {"_id": oid},
-            {"$push": {"messages": {"$each": [user_msg, bot_msg]}}}
-        )
-
-    # Return only the newly added messages (user + bot), not all messages
-    all_messages = [user_msg] + bot_messages
-    return {"messages": all_messages}
+@app.post("/conversations/{conv_id}/end")
+def end_session(conv_id: str, background_tasks: BackgroundTasks):
+    """
+    End the chat session:
+    1. Flush history from Redis to MongoDB.
+    2. (Optional) Clear Redis key if you want to free memory immediately, 
+       but keeping it for 24h (TTL) is usually safer for 'viewing' history.
+    """
+    # Run storage in background so UI returns instantly
+    background_tasks.add_task(flush_conversation_to_mongo, conv_id)
+    return {"status": "session_ended", "message": "Flushing to database in background"}
 
 
 
@@ -277,9 +356,15 @@ def upload_pdf(conv_id: str, pdf_type: str, file: UploadFile = File(...)):
             out.write(content)
 
         try:
-            vari = run_resume_pipeline(path).get("ranked_jobs", [])[:5]
+            result = run_resume_pipeline(path)
+            candidate_info = result["candidate_info"]
+            ranked_jobs = result["ranked_jobs"][:5]
+            
+            # Save candidate info to Redis for Context Awareness
+            RedisClient.save_resume_context(conv_id, candidate_info)
+            
             formatted_jobs = []
-            for i, job in enumerate(vari):  # Show top 5 only
+            for i, job in enumerate(ranked_jobs):  # Show top 5 only
                 formatted_jobs.append(
                     f"{i+1}. {job.get('title')} @ {job.get('company')}\n"
                     f"Location: {job.get('location', 'Not specified')}\n"
@@ -298,13 +383,17 @@ def upload_pdf(conv_id: str, pdf_type: str, file: UploadFile = File(...)):
         "text": bot_text,
         "time": now_iso,
     }
+    
+    # Store Bot Response in Redis
+    RedisClient.add_message(conv_id, bot_msg)
 
+    # Optional: Still saving PDF record to Mongo for persistence (metadata only)
     conversations_col.update_one(
         {"_id": oid},
         {
             "$push": {
-                "pdfs": pdf_entry,
-                "messages": bot_msg
+                "pdfs": pdf_entry
+                # We do NOT push messages to Mongo here anymore
             }
         }
     )
