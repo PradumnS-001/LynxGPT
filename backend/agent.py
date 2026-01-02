@@ -2,6 +2,7 @@ from typing import List, Literal, TypedDict, Any, Optional, Dict
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
+from RAG.rag_engine import ask_subject_qa
 from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
@@ -36,7 +37,7 @@ llm = ChatGoogleGenerativeAI(
 class State(TypedDict):
     messages: List[BaseMessage]
     current_input: str
-    route: Literal["question_paper", "course_plan", "memory", "resume_qa", "out_of_scope"]
+    route: Literal["question_paper", "course_plan", "memory", "resume_qa", "subject_qa", "out_of_scope"]
     last_result: Optional[Any]
     resume_context: Optional[Dict]  # Added for Dreamer integration
 
@@ -44,7 +45,7 @@ class State(TypedDict):
 #  ROUTER MODEL OUTPUT SCHEMA
 # ---------------------------------------------------
 class Route(BaseModel):
-    choice: Literal["question_paper", "course_plan", "memory", "resume_qa", "out_of_scope"]
+    choice: Literal["question_paper", "course_plan", "memory", "resume_qa", "subject_qa", "out_of_scope"]
 
 router_llm = llm.with_structured_output(Route)
 
@@ -67,6 +68,7 @@ def classifier_node(state: State) -> State:
             "  exam pattern, or related topics.\n"
             "- 'memory': if the user is asking about previous parts of the SAME conversation (e.g., 'What did I ask?') OR just saying 'hi'/'hello' (greetings).\n"
             "- 'resume_qa': if the user is asking clarifying questions about their uploaded resume, skills, experience, or job recommendations.\n"
+            "- 'subject_qa': if the user is asking subject-specific questions, definitions, formulas, or academic content questions (e.g., 'What is thermodynamics?', 'Explain Newton's laws').\n"
             "- 'out_of_scope': for everything else not matching the above.\n"
             "Return ONLY one label, with no explanation."
         )
@@ -128,7 +130,14 @@ def resume_qa_fn(state: State) -> str:
     # But specifically instruct it to use the resume info
     convo = [system] + state["messages"]
     result = llm.invoke(convo)
+    convo = [system] + state["messages"]
+    result = llm.invoke(convo)
     return str(result.content)
+
+def subject_qa_fn(state: State) -> str:
+    print("Routing to subject_qa_fn...")
+    resp = ask_subject_qa(state["current_input"])
+    return resp
 
 # ---------------------------------------------------
 # NODE WRAPPERS
@@ -156,6 +165,10 @@ def resume_qa_node(state: State) -> State:
     answer = resume_qa_fn(state)
     return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))]}
 
+def subject_qa_node(state: State) -> State:
+    answer = subject_qa_fn(state)
+    return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))]}
+
 def out_of_scope_node(state: State) -> State:
     msg = "Sorry! I'm not able to handle that — could you try a different question?"
     return {**state, "messages": state["messages"] + [AIMessage(content=msg)]}
@@ -173,6 +186,7 @@ builder.add_node("question_paper", question_paper_node)
 builder.add_node("course_plan", course_plan_node)
 builder.add_node("memory", memory_node)
 builder.add_node("resume_qa", resume_qa_node)
+builder.add_node("subject_qa", subject_qa_node)
 builder.add_node("out_of_scope", out_of_scope_node)
 
 builder.set_entry_point("classifier")
@@ -188,6 +202,7 @@ builder.add_conditional_edges(
         "course_plan": "course_plan",
         "memory": "memory",
         "resume_qa": "resume_qa",
+        "subject_qa": "subject_qa",
         "out_of_scope": "out_of_scope"
     },
 )
@@ -196,6 +211,7 @@ builder.add_edge("question_paper", END)
 builder.add_edge("course_plan", END)
 builder.add_edge("memory", END)
 builder.add_edge("resume_qa", END)
+builder.add_edge("subject_qa", END)
 builder.add_edge("out_of_scope", END)
 
 graph = builder.compile()
