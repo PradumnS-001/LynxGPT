@@ -94,7 +94,9 @@ def memory_fn(state: State) -> str:
     print("Routing to memory_fn...")
     system = SystemMessage(
         content=(
-            "You are a conversation memory assistant. Use only the provided history to answer meta-questions."
+            "You are a helpful assistant. You have access to the conversation history.\n"
+            "If the user is chatting, greeting, or asking about previous messages, reply naturally and helpfully.\n"
+            "Do not describe yourself as a 'memory assistant' unless specifically asked."
         )
     )
     convo = [system] + state["messages"]
@@ -161,6 +163,9 @@ def out_of_scope_node(state: State) -> State:
 # ---------------------------------------------------
 # GRAPH
 # ---------------------------------------------------
+# ---------------------------------------------------
+#  GRAPH
+# ---------------------------------------------------
 builder = StateGraph(State)
 
 builder.add_node("classifier", classifier_node)
@@ -195,12 +200,26 @@ builder.add_edge("out_of_scope", END)
 
 graph = builder.compile()
 
-def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, resume_context: Optional[Dict] = None):
+# ---------------------------------------------------
+#  HELPER / DB
+# ---------------------------------------------------
+try:
+    from database.redis_client import RedisClient, redis_host, redis_port
+except ImportError:
+    # Fallback for when running agent.py directly as a script (sys.path issues)
+    import sys
+    sys.path.append(str(Path(__file__).parent))
+    from database.redis_client import RedisClient, redis_host, redis_port
+
+def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, resume_context: Optional[Dict] = None, session_id: Optional[str] = None):
     """
-    Invoke the agent with user input, history, and optional resume context.
+    Invoke the agent with user input. 
+    - If `conversation_history` is provided, it uses that (stateless mode).
+    - If `conversation_history` is MISSING but `session_id` is provided, it fetches from Redis (stateful mode).
     """
     messages = []
     
+    # 1. Try to load legacy list-of-dicts history if provided
     if conversation_history:
         for msg in conversation_history:
             sender = msg.get("sender", "").lower()
@@ -211,7 +230,31 @@ def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, 
                 messages.append(HumanMessage(content=text))
             elif sender == "bot" or sender == "ai":
                 messages.append(AIMessage(content=text))
-    
+
+    # 2. If no history provided, but we have a session_id, fetch from Redis
+    elif session_id:
+        print(f"DEBUG: Fetching history for session {session_id} from Redis...")
+        try:
+            stored_msgs = RedisClient.get_chat_history(session_id)
+            for m in stored_msgs:
+                # Redis stores them as dicts with 'sender'/'text' or LangChain JSON
+                # The RedisClient.get_chat_history in main.py seems to return raw dicts if inserted via main.py
+                # But let's check how RedisClient returns them.
+                # Inspecting redis_client.py: it returns json.loads(m).
+                # If main.py inserted them, they are dicts like {"sender": "...", "text": "..."}
+                
+                # Handle dict format from main.py
+                if "sender" in m and "text" in m:
+                    sender = m["sender"]
+                    text = m["text"]
+                    if sender == "bot":
+                        messages.append(AIMessage(content=text))
+                    else:
+                        messages.append(HumanMessage(content=text))
+                
+        except Exception as e:
+            print(f"Error fetching history: {e}")
+
     messages.append(HumanMessage(content=user_input))
     
     init_state: State = {
@@ -224,6 +267,22 @@ def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, 
 
     result = graph.invoke(init_state)
     
+    # Optional: If running in stateful mode (session_id present), we should save the NEW message back to Redis?
+    # BUT: The 'main.py' handles the saving of the response. 
+    # If using 'invoker' from CLI, we might want to save it here to verify persistence.
+    # Let's do it ONLY if using session_id (CLI mode usually).
+    if session_id:
+        from datetime import datetime
+        now = datetime.now().isoformat()
+        
+        # Save User Msg
+        RedisClient.add_message(session_id, {"sender": "user", "text": user_input, "time": now})
+        
+        # Save Bot Msg
+        bot_response = result["messages"][-1].content
+        RedisClient.add_message(session_id, {"sender": "bot", "text": str(bot_response), "time": now})
+
+    
     if result.get("last_result"):
         return result.get("last_result")
     
@@ -233,12 +292,24 @@ def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, 
 # CLI DEMO
 # ---------------------------------------------------
 if __name__ == "__main__":
-    print("Gemini Router Agent Ready 🚀")
-    # Simulation logic omitted for brevity
+    print(f"Gemini Router Agent Ready 🚀 (Connected to Redis at {redis_host}:{redis_port})")
+    
+    # Generate or ask for session ID
+    sid = input("Enter a Session ID to resume (or press Enter for new): ").strip()
+    if not sid:
+        import uuid
+        sid = str(uuid.uuid4())[:8]
+        print(f"Started NEW session: {sid}")
+    else:
+        print(f"Resuming session: {sid}")
+
     while True:
         try:
             user_input = input("\nYou: ")
             if user_input.lower() in {"exit", "quit"}: break
-            print("Bot:", invoker(user_input))
+            
+            # Pass session_id so it fetches/saves history
+            response = invoker(user_input, session_id=sid)
+            print("Bot:", response)
         except KeyboardInterrupt:
             break
