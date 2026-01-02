@@ -12,6 +12,7 @@ langchain-huggingface
 langchain-google-genai
 langgraph
 google-generativeai
+langchain-groq
 
 # ML/Embeddings
 torch

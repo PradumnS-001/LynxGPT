@@ -82,9 +82,10 @@ def purge_empty_conversations():
         ids_to_delete = []
         
         for conv in conversations:
+            conv_id = str(conv["_id"])
             messages = conv.get("messages", [])
             
-            # Check if conversation has any non-empty messages
+            # 1. Check if conversation has messages in Mongo
             has_messages = False
             if messages:
                 for msg in messages:
@@ -93,9 +94,17 @@ def purge_empty_conversations():
                         has_messages = True
                         break
             
-            # Mark for deletion if it has no meaningful messages
-            if not has_messages:
-                ids_to_delete.append(conv["_id"])
+            if has_messages:
+                continue
+
+            # 2. Check if conversation has messages in Redis (active session)
+            # If so, do NOT delete it yet.
+            redis_msgs = RedisClient.get_chat_history(conv_id)
+            if redis_msgs:
+                continue
+            
+            # 3. Mark for deletion if it has no meaningful messages in either DB
+            ids_to_delete.append(conv["_id"])
         
         # Delete all empty conversations
         if ids_to_delete:

@@ -29,6 +29,8 @@ LynxGPT/
 │   ├── QuestionPapers/          # Question paper processing
 │   │   ├── pdf_processor.py     # PDF text extraction
 │   │   └── query_processor.py   # Query handling
+│   ├── RAG/                     # [NEW] Subject QA RAG logic
+│   │   └── rag_engine.py        # Core RAG engine
 │   ├── Dreamer/                 # Resume-Job Matching
 │   │   └── dreamer/
 │   │       ├── app.py           # Resume upload API
@@ -83,6 +85,7 @@ cp env.example .env
 
 ```env
 GOOGLE_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
 MONGODB=mongodb://mongo:27017
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_key
