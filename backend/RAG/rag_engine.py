@@ -116,8 +116,8 @@ def get_rag_resources():
         _vector_store = CustomSupabaseVectorStore(
             client=supabase_client,
             embedding=embeddings,
-            table_name="documents",
-            query_name="match_documents",
+            table_name="metadata.documents",
+            query_name="metadata.match_documents",
         )
 
         _llm = ChatGroq(
