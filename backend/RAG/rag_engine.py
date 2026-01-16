@@ -24,8 +24,16 @@ try:
 except ImportError:
     pass
 
-# --- Custom Vector Store Class ---
+
+# --- Custom Vector Store Class for Hybrid Search ---
 class CustomSupabaseVectorStore(SupabaseVectorStore):
+    """
+    Custom vector store that supports hybrid search (BM25 + Semantic).
+    Passes both the query embedding AND the raw query text to the RPC function.
+    """
+    def __init__(self, client, embedding, table_name, query_name):
+        super().__init__(client=client, embedding=embedding, table_name=table_name, query_name=query_name)
+
     def similarity_search(
         self,
         query: str,
@@ -35,7 +43,9 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
     ) -> List[Document]:
         vectors = self._embedding.embed_query(query)
         return [
-            doc for doc, _ in self.similarity_search_with_score_by_vector(vectors, k, filter=filter)
+            doc for doc, _ in self.similarity_search_with_score_by_vector(
+                vectors, k, filter=filter, query_text=query
+            )
         ]
 
     def similarity_search_with_score_by_vector(
@@ -43,10 +53,11 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
         embedding: List[float],
         k: int = 4,
         filter: Optional[Dict[str, Any]] = None,
+        query_text: str = "",
     ) -> List[Tuple[Document, float]]:
         docs_and_scores = []
         results = self.similarity_search_by_vector_returning_embeddings(
-            embedding, k, filter=filter
+            embedding, k, filter=filter, query_text=query_text
         )
         for doc, score, _ in results:
             docs_and_scores.append((doc, score))
@@ -58,14 +69,15 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
         k: int,
         filter: Optional[Dict[str, Any]] = None,
         postgrest_filter: Optional[str] = None,
+        query_text: str = "",
     ) -> List[Tuple[Document, float, np.ndarray]]:
+        # Parameters must match the Supabase function signature EXACTLY
         match_documents_params = dict(
-            query_embedding=query,
-            match_count=k, 
-            match_threshold=0.0
+            q_embed=query,
+            q_text=query_text,
+            match_c=k,
+            match_thresh=0.0,
         )
-        if filter:
-            match_documents_params["filter"] = filter
 
         query_builder = self._client.rpc(self.query_name, match_documents_params)
 
@@ -73,7 +85,7 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
             query_builder.params = query_builder.params.set(
                 "and", f"({postgrest_filter})"
             )
-            
+
         res = query_builder.execute()
 
         match_result = [
@@ -82,19 +94,19 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
                     metadata=search.get("metadata", {}),
                     page_content=search.get("content", ""),
                 ),
-                search.get("similarity", 0.0),
-                np.fromstring(
-                    search.get("embedding", "").strip("[]"), np.float32, sep=","
-                ),
+                search.get("rrf_score", 0.0),  # Hybrid uses RRF score
+                np.array([]),  # We don't need embeddings back for hybrid
             )
             for search in res.data
             if search.get("content")
         ]
         return match_result
 
+
 # --- Initialization ---
 _vector_store = None
 _llm = None
+
 
 def get_rag_resources():
     global _vector_store, _llm
@@ -112,23 +124,24 @@ def get_rag_resources():
     try:
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         supabase_client = create_client(supabase_url, supabase_key)
-        
+
         _vector_store = CustomSupabaseVectorStore(
             client=supabase_client,
             embedding=embeddings,
             table_name="metadata.documents",
-            query_name="metadata.match_documents",
+            query_name="match_documents_hybrid",  # Function is in public schema
         )
 
         _llm = ChatGroq(
             temperature=0.2,
-            model_name="openai/gpt-oss-20b", 
+            model_name="openai/gpt-oss-20b",
             groq_api_key=groq_api_key
         )
         return _vector_store, _llm
     except Exception as e:
         print(f"RAG: Initialization failed: {e}")
         return None, None
+
 
 # --- Prompt ---
 custom_prompt_template = """
@@ -148,6 +161,7 @@ Question: {question}
 Answer:
 """
 PROMPT = PromptTemplate(template=custom_prompt_template, input_variables=["context", "question"])
+
 
 def clean_latex(text):
     # Remove any accidental LaTeX delimiters that might still appear
@@ -170,13 +184,13 @@ def ask_subject_qa(query: str) -> str:
             retriever=vector_store.as_retriever(search_kwargs={"k": 2}),
             chain_type_kwargs={"prompt": PROMPT}
         )
-        
+
         result = qa_chain.invoke({"query": query})
         response = result["result"]
-        
+
         # Clean latex just in case
         cleaned_response = clean_latex(response)
-        
+
         return cleaned_response
     except Exception as e:
         return f"Error occurred during Subject QA: {e}"
