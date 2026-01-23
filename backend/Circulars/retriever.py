@@ -111,95 +111,116 @@ def retrieve_top_chunks(question: str):
     # normalize query to lowercase first
     question_lc = (question or "").lower()
 
-    conn = psycopg2.connect(host=HOST, database=DBNAME, user=USER, password=PASSWORD, port=PORT)
-    cur = conn.cursor()
-
-    q_vec = embeddings.embed_query(question)
-    q_vec_str = "[" + ",".join(map(str, q_vec)) + "]"
-
-    # Extract course info from user query (LLM + fallback)
-    course_code, course_name, section = extract_course_info_from_query(question_lc)
-
-    # Step 1 - Keyword search on metadata (course_code / course_name / title)
-    # Use ILIKE with the extracted fields; fall back to searching the whole query
+    conn = None
+    cur = None
     try:
-        if course_code or course_name:
-            params = []
-            clauses = []
-            if course_code:
-                clauses.append("course_code ILIKE %s")
-                params.append(f"%{course_code}%")
-            if course_name:
-                clauses.append("course_name ILIKE %s")
-                params.append(f"%{course_name}%")
-            if section:
-                clauses.append("section ILIKE %s")
-                params.append(f"%{section}%")
-            # also allow title search using the full query
-            clauses.append("title ILIKE %s")
-            params.append(f"%{question_lc}%")
+        conn = psycopg2.connect(host=HOST, database=DBNAME, user=USER, password=PASSWORD, port=PORT)
+        cur = conn.cursor()
 
-            sql = f"SELECT id, circular_id, title FROM metadata WHERE {' OR '.join(clauses)} LIMIT 100;"
-            cur.execute(sql, tuple(params))
-            metadata_matches = cur.fetchall()
-        else:
-            cur.execute("""
-                SELECT id, circular_id, title
-                FROM metadata
-                WHERE course_code ILIKE %s
-                   OR course_name ILIKE %s
-                   OR title ILIKE %s
-                LIMIT 100;
-            """, (f"%{question_lc}%", f"%{question_lc}%", f"%{question_lc}%"))
-            metadata_matches = cur.fetchall()
-    except Exception:
+        q_vec = embeddings.embed_query(question)
+        q_vec_str = "[" + ",".join(map(str, q_vec)) + "]"
+
+        # Extract course info from user query (LLM + fallback)
+        course_code, course_name, section = extract_course_info_from_query(question_lc)
+
+        # Step 1 - Keyword search on metadata (course_code / course_name / title)
+        # Use ILIKE with the extracted fields; fall back to searching the whole query
         metadata_matches = []
+        try:
+            if course_code or course_name:
+                params = []
+                clauses = []
+                if course_code:
+                    clauses.append("course_code ILIKE %s")
+                    params.append(f"%{course_code}%")
+                if course_name:
+                    clauses.append("course_name ILIKE %s")
+                    params.append(f"%{course_name}%")
+                if section:
+                    clauses.append("section ILIKE %s")
+                    params.append(f"%{section}%")
+                # also allow title search using the full query
+                clauses.append("title ILIKE %s")
+                params.append(f"%{question_lc}%")
 
-    metadata_ids = []
-    if metadata_matches:
-        for mid, circ_id, title in metadata_matches:
-            metadata_ids.append(mid)
+                sql = f"SELECT id, circular_id, title FROM metadata WHERE {' OR '.join(clauses)} LIMIT 100;"
+                cur.execute(sql, tuple(params))
+                metadata_matches = cur.fetchall()
+            else:
+                cur.execute("""
+                    SELECT id, circular_id, title
+                    FROM metadata
+                    WHERE course_code ILIKE %s
+                       OR course_name ILIKE %s
+                       OR title ILIKE %s
+                    LIMIT 100;
+                """, (f"%{question_lc}%", f"%{question_lc}%", f"%{question_lc}%"))
+                metadata_matches = cur.fetchall()
+        except Exception as e:
+            print(f"[WARN] Keyword search failed: {e}")
+            conn.rollback()  # Reset the transaction state after failure
+            metadata_matches = []
 
-    # If no keyword matches, fall back to finding the nearest metadata by embedding
-    if not metadata_ids:
-        cur.execute("""
-            SELECT metadata_id
-            FROM content
-            ORDER BY embedding <=> %s::vector
-            LIMIT 1;
-        """, (q_vec_str,))
-        res = cur.fetchone()
-        if not res:
-            cur.close()
-            conn.close()
+        metadata_ids = []
+        if metadata_matches:
+            for mid, circ_id, title in metadata_matches:
+                metadata_ids.append(mid)
+
+        # If no keyword matches, fall back to finding the nearest metadata by embedding
+        if not metadata_ids:
+            try:
+                cur.execute("""
+                    SELECT metadata_id
+                    FROM content
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT 1;
+                """, (q_vec_str,))
+                res = cur.fetchone()
+                if not res:
+                    return []
+                metadata_ids = [res[0]]
+            except Exception as e:
+                print(f"[WARN] Embedding fallback search failed: {e}")
+                conn.rollback()
+                return []
+
+        # Step 2 - fetch top-6 chunks across the matched metadata_ids by embedding similarity
+        try:
+            cur.execute("""
+                SELECT c.id, c.chunk_text, c.metadata_id, c.circular_id, m.title
+                FROM content c
+                JOIN metadata m ON c.metadata_id = m.id
+                WHERE c.metadata_id = ANY(%s)
+                ORDER BY c.embedding <=> %s::vector
+                LIMIT 6;
+            """, (metadata_ids, q_vec_str))
+
+            rows = cur.fetchall()
+        except Exception as e:
+            print(f"[ERROR] Chunk retrieval failed: {e}")
+            conn.rollback()
             return []
-        metadata_ids = [res[0]]
 
-    # Step 2 - fetch top-6 chunks across the matched metadata_ids by embedding similarity
-    cur.execute("""
-        SELECT c.id, c.chunk_text, c.metadata_id, c.circular_id, m.title
-        FROM content c
-        JOIN metadata m ON c.metadata_id = m.id
-        WHERE c.metadata_id = ANY(%s)
-        ORDER BY c.embedding <=> %s::vector
-        LIMIT 6;
-    """, (metadata_ids, q_vec_str))
+        cleaned_docs = []
+        circular_ids_used = set()
+        for cid, chunk, mid, circular_id, title in rows:
+            cleaned_chunk = preprocess_text(chunk)
+            cleaned_docs.append(f"Title: {title}\n{cleaned_chunk}")
+            if circular_id:
+                circular_ids_used.add(circular_id)
 
-    rows = cur.fetchall()
-
-    cleaned_docs = []
-    circular_ids_used = set()
-    for cid, chunk, mid, circular_id, title in rows:
-        cleaned_chunk = preprocess_text(chunk)
-        cleaned_docs.append(f"Title: {title}\n{cleaned_chunk}")
-        if circular_id:
-            circular_ids_used.add(circular_id)
-
-    cur.close()
-    conn.close()
-
-    # Return both cleaned docs and set of circular ids used
-    return cleaned_docs, circular_ids_used
+        # Return both cleaned docs and set of circular ids used
+        return cleaned_docs, circular_ids_used
+    
+    except Exception as e:
+        print(f"[ERROR] retrieve_top_chunks failed: {e}")
+        return []
+    
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 # Ask Question

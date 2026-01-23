@@ -206,6 +206,30 @@ def process_user_query(user_query: str) -> dict:
     
 def get_link(test_query: str) -> str:
     output = process_user_query(test_query)
+    
+    # Check for errors from the processing pipeline
+    if 'error' in output and output['error']:
+        return f"Sorry, I couldn't process your request: {output['error']}"
+    
+    # Check if results exist
+    if not output.get('results') or len(output['results']) == 0:
+        # Build a helpful message based on what was extracted
+        metadata = output.get('metadata', {})
+        search_details = []
+        if metadata.get('department'):
+            search_details.append(f"department: {metadata['department']}")
+        if metadata.get('subject'):
+            search_details.append(f"subject: {metadata['subject']}")
+        if metadata.get('year'):
+            search_details.append(f"year: {metadata['year']}")
+        if metadata.get('exam_type'):
+            search_details.append(f"exam type: {metadata['exam_type']}")
+        
+        if search_details:
+            return f"Sorry, I couldn't find any question papers matching: {', '.join(search_details)}. Try being more specific with the department, subject name, or year."
+        else:
+            return "Sorry, I couldn't understand your query. Please specify the department, subject, and year for the question paper you're looking for."
+    
     return output['results'][0]['file_url']
 
 # --- Example Usage (for testing this script directly) ---
