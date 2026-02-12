@@ -179,6 +179,23 @@ def process_user_query(user_query: str) -> dict:
     if 'error' in metadata:
         return {"error": f"LLM failed: {metadata['error']}", "results": []}
 
+    # --- NEW: Strict Validation ---
+    missing_fields = []
+    if not metadata.get('department'):
+        missing_fields.append("Department (e.g., CSE, ECE)")
+    if not metadata.get('subject'):
+        missing_fields.append("Subject Name")
+    if not metadata.get('year'):
+        missing_fields.append("Year")
+        
+    if missing_fields:
+        return {
+            "error": f"Please specify the following details: {', '.join(missing_fields)}",
+            "metadata": metadata,
+            "results": []
+        }
+    # ------------------------------
+
     # 2. Create a fresh Supabase client (avoids connection errors)
     client = None
     try:
