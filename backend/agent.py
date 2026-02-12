@@ -81,7 +81,7 @@ def classifier_node(state: State) -> State:
 # ---------------------------------------------------
 # MAIN TASK FUNCTIONS
 # ---------------------------------------------------
-def question_paper_fn(state: State) -> str:
+def question_paper_fn(state: State) -> dict:
     print("Routing to question_paper_fn...")
     from QuestionPapers.query_processor import get_link
     resp = get_link(state["current_input"])
@@ -143,8 +143,20 @@ def subject_qa_fn(state: State) -> str:
 # NODE WRAPPERS
 # ---------------------------------------------------
 def question_paper_node(state: State) -> State:
-    answer = question_paper_fn(state)
-    return {**state, "messages": state["messages"] + [AIMessage(content=str(answer))]}
+    answer_dict = question_paper_fn(state)
+    
+    # Handle the dictionary response (answer text + links)
+    msgs = []
+    
+    # Add the main text response
+    main_text = answer_dict.get("answer", "Here is what I found:")
+    msgs.append(AIMessage(content=str(main_text)))
+    
+    # Add each link as a separate message (Frontend renders .pdf links as chips)
+    for link in answer_dict.get("links", []):
+        msgs.append(AIMessage(content=str(link)))
+
+    return {**state, "messages": state["messages"] + msgs, "last_result": answer_dict}
 
 def course_plan_node(state: State) -> State:
     answer = course_plan_fn(state)

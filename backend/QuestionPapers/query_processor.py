@@ -221,15 +221,16 @@ def process_user_query(user_query: str) -> dict:
         "results": db_results
     }
     
-def get_link(test_query: str) -> str:
+def get_link(test_query: str) -> dict:
     output = process_user_query(test_query)
     
     # Check for errors from the processing pipeline
     if 'error' in output and output['error']:
-        return f"Sorry, I couldn't process your request: {output['error']}"
+        return {"answer": f"Sorry, I couldn't process your request: {output['error']}", "links": []}
     
     # Check if results exist
-    if not output.get('results') or len(output['results']) == 0:
+    results = output.get('results', [])
+    if not results:
         # Build a helpful message based on what was extracted
         metadata = output.get('metadata', {})
         search_details = []
@@ -243,11 +244,21 @@ def get_link(test_query: str) -> str:
             search_details.append(f"exam type: {metadata['exam_type']}")
         
         if search_details:
-            return f"Sorry, I couldn't find any question papers matching: {', '.join(search_details)}. Try being more specific with the department, subject name, or year."
+            msg = f"Sorry, I couldn't find any question papers matching: {', '.join(search_details)}. Try being more specific with the department, subject name, or year."
         else:
-            return "Sorry, I couldn't understand your query. Please specify the department, subject, and year for the question paper you're looking for."
+            msg = "Sorry, I couldn't understand your query. Please specify the department, subject, and year for the question paper you're looking for."
+        return {"answer": msg, "links": []}
     
-    return output['results'][0]['file_url']
+    # Success - return all links
+    links = [r['file_url'] for r in results if r.get('file_url')]
+    count = len(links)
+    
+    if count == 1:
+        ans = f"I found 1 question paper for {output['metadata'].get('subject')} ({output['metadata'].get('year')}):"
+    else:
+        ans = f"I found {count} question papers for {output['metadata'].get('subject')} ({output['metadata'].get('year')}):"
+        
+    return {"answer": ans, "links": links}
 
 # --- Example Usage (for testing this script directly) ---
 if __name__ == '__main__':
