@@ -25,6 +25,7 @@ function ChatBotUI({ conversationId }) {
   const typingConversationIdRef = useRef(null);
   const conversationsWithMessagesRef = useRef(new Set()); // Track conversations that have messages
   const activeConversationIdRef = useRef(conversationId); // Track current visible conversation
+  const [isSending, setIsSending] = useState(false);
 
   const [introText, setIntroText] = useState(
     () => INTRO_MESSAGES[Math.floor(Math.random() * INTRO_MESSAGES.length)]
@@ -167,10 +168,7 @@ function ChatBotUI({ conversationId }) {
     const userText = input;
     setInput("");
     setShowChat(true);
-
-    const sendBtn = document.querySelector(".send-btn");
-    sendBtn.disabled = true;
-    sendBtn.classList.add("disabled");
+    setIsSending(true);
 
     // Mark this conversation as having messages
     conversationsWithMessagesRef.current.add(conversationId);
@@ -308,11 +306,7 @@ function ChatBotUI({ conversationId }) {
         typingConversationIdRef.current = null;
       }
 
-      const btn = document.querySelector(".send-btn");
-      if (btn) {
-        btn.disabled = false;
-        btn.classList.remove("disabled");
-      }
+      setIsSending(false);
 
       setTimeout(() => {
         const area = document.querySelector(".messages-area");
@@ -559,9 +553,16 @@ function ChatBotUI({ conversationId }) {
           className="input-box"
           value={input}
           onChange={(e) => { setInput(e.target.value); playKeySound(); }}
-          onKeyDown={(e) => !document.querySelector(".send-btn").disabled && e.key === "Enter" && handleSend()}
+          onKeyDown={(e) => !isSending && e.key === "Enter" && handleSend()}
+          disabled={isSending}
         />
-        <button onClick={(e) => { triggerRipple(e); handleSend(); }} className="send-btn">Send</button>
+        <button
+          onClick={(e) => { triggerRipple(e); handleSend(); }}
+          className={`send-btn ${isSending ? "disabled" : ""}`}
+          disabled={isSending}
+        >
+          Send
+        </button>
       </div>
     </div>
   );

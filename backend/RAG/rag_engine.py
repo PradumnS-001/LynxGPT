@@ -3,10 +3,11 @@ import re
 import numpy as np
 from typing import List, Dict, Tuple, Any, Optional
 from langchain_core.documents import Document
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain_classic.chains import RetrievalQA
-from langchain_classic.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 from langchain_community.vectorstores import SupabaseVectorStore
 from supabase.client import create_client
 
@@ -144,23 +145,19 @@ def get_rag_resources():
 
 
 # --- Prompt ---
-custom_prompt_template = """
-You are an expert tutor. Answer the question using the context.
-
-CRITICAL RULES FOR FORMATTING:
-1. **MATH:** Do NOT use LaTeX or `$$` delimiters. Write formulas in plain text or using Unicode characters where possible.
-   - Example: Use "E = mc^2" instead of "$$ E = mc^2 $$".
-   - Use standard text representations (e.g., "lambda", "nu", "sqrt()").
-
-2. **DIAGRAMS:** Do NOT generate Mermaid.js code or code blocks.
-   - Using words, bullet points, or numbered lists to describe the process or flow.
-   - If a diagram is requested, explain the structure textually.
-
-Context: {context}
-Question: {question}
-Answer:
-"""
-PROMPT = PromptTemplate(template=custom_prompt_template, input_variables=["context", "question"])
+PROMPT = ChatPromptTemplate.from_messages([
+    ("system",
+     "You are an expert tutor. Answer the question using the context.\n\n"
+     "CRITICAL RULES FOR FORMATTING:\n"
+     "1. **MATH:** Do NOT use LaTeX or `$$` delimiters. Write formulas in plain text or using Unicode characters where possible.\n"
+     "   - Example: Use 'E = mc^2' instead of '$$ E = mc^2 $$'.\n"
+     "   - Use standard text representations (e.g., 'lambda', 'nu', 'sqrt()').\n\n"
+     "2. **DIAGRAMS:** Do NOT generate Mermaid.js code or code blocks.\n"
+     "   - Using words, bullet points, or numbered lists to describe the process or flow.\n"
+     "   - If a diagram is requested, explain the structure textually.\n\n"
+     "Context: {context}"),
+    ("human", "{question}"),
+])
 
 
 def clean_latex(text):
@@ -178,15 +175,20 @@ def ask_subject_qa(query: str) -> str:
         return "Sorry, the Subject QA module is not configured correctly (missing keys or connection failed)."
 
     try:
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=vector_store.as_retriever(search_kwargs={"k": 2}),
-            chain_type_kwargs={"prompt": PROMPT}
+        retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+
+        def format_docs(docs):
+            return "\n\n".join(doc.page_content for doc in docs)
+
+        # Build LCEL chain: retrieve docs -> format -> prompt -> LLM -> parse
+        rag_chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | PROMPT
+            | llm
+            | StrOutputParser()
         )
 
-        result = qa_chain.invoke({"query": query})
-        response = result["result"]
+        response = rag_chain.invoke(query)
 
         # Clean latex just in case
         cleaned_response = clean_latex(response)

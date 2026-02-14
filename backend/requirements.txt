@@ -5,12 +5,12 @@ python-multipart
 pydantic
 
 # LangChain & LLM
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-community>=0.0.10
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
 langchain-huggingface
 langchain-google-genai
-langchain-groq
+langchain-groq>=0.2.0
 langgraph
 google-generativeai
 
