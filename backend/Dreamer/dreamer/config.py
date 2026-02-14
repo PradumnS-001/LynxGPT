@@ -7,10 +7,10 @@ FILES_DATABASE = "database.csv"
 FILES_TEMP = "database_tmp.csv"
 FILES_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 
-# Supabase
-SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_URLD")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_KEYD")
-SUPABASE_TABLE_JOBS = "jobs"
+# Supabase - Dreamer uses its own project
+SUPABASE_URL = os.getenv("DREAMER_SUPABASE_URL") 
+SUPABASE_KEY = os.getenv("DREAMER_SUPABASE_KEY") 
+SUPABASE_TABLE_JOBS = os.getenv("SUPABASE_TABLE_JOBS") or "jobs"
 TABLE_NAME = SUPABASE_TABLE_JOBS  # Alias for database.py
 
 # Embedding
