@@ -302,6 +302,11 @@ def _append_data(embeddings, batch_size=5):
 
                 conn.commit()
                 offset += batch_size
+                
+                # Rate limit protection for Groq API (max 30 RPM)
+                # Sleep 2.5s guarantees max ~24 requests/min
+                print("⏳ Sleeping 2.5s to respect API rate limits...")
+                time.sleep(2.0)
 
     except Exception as e:
         print(f"🚨 Unexpected failure: {e}")

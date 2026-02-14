@@ -9,7 +9,7 @@ FILES_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_URLD")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_KEYD")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_KEYD")
 SUPABASE_TABLE_JOBS = "jobs"
 TABLE_NAME = SUPABASE_TABLE_JOBS  # Alias for database.py
 
