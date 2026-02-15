@@ -15,6 +15,7 @@ langgraph
 google-generativeai
 
 # ML/Embeddings
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch
 sentence-transformers
 numpy

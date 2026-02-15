@@ -7,6 +7,9 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - MONGODB=mongodb://mongo:27017/
+      - REDIS_HOST=redis
     volumes:
       - ./backend:/app
     restart: unless-stopped
