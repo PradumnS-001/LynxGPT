@@ -13,11 +13,11 @@ import re
 
 # Load environment
 load_dotenv()
-USER = os.getenv("DB_USER")
-PASSWORD = os.getenv("DB_PASSWORD")
-HOST = os.getenv("DB_HOST")
-PORT = os.getenv("DB_PORT")
-DBNAME = os.getenv("DB_NAME")
+USER = os.getenv("CIRCULAR_DB_USER")
+PASSWORD = os.getenv("CIRCULAR_DB_PASSWORD")
+HOST = os.getenv("CIRCULAR_DB_HOST")
+PORT = os.getenv("CIRCULAR_DB_PORT")
+DBNAME = os.getenv("CIRCULAR_DB_NAME")
 gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
 LLM_MODEL = "gemini-2.5-flash"

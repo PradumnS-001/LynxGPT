@@ -31,11 +31,11 @@ TOP_N_CHARACTERS = 2000 # Increased for better context
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = os.getenv("GROQ_API_URL")
 
-USER = os.getenv("DB_USER")
-PASSWORD = os.getenv("DB_PASSWORD")
-HOST = os.getenv("DB_HOST")
-PORT = os.getenv("DB_PORT")
-DBNAME = os.getenv("DB_NAME")
+USER = os.getenv("CIRCULAR_DB_USER")
+PASSWORD = os.getenv("CIRCULAR_DB_PASSWORD")
+HOST = os.getenv("CIRCULAR_DB_HOST")
+PORT = os.getenv("CIRCULAR_DB_PORT")
+DBNAME = os.getenv("CIRCULAR_DB_NAME")
 
 embeddings = HuggingFaceEmbeddings(model_name=model_name, model_kwargs={"device": device})
 
