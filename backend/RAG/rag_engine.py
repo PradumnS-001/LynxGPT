@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 import numpy as np
 from typing import List, Dict, Tuple, Any, Optional
 from langchain_core.documents import Document
@@ -107,6 +108,7 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
 # --- Initialization ---
 _vector_store = None
 _llm = None
+_init_lock = threading.Lock()
 
 
 def get_rag_resources():
@@ -114,41 +116,50 @@ def get_rag_resources():
     if _vector_store and _llm:
         return _vector_store, _llm
 
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
-    groq_api_key = os.getenv("GROQ_API_KEY")
+    with _init_lock:
+        # Double-check after acquiring lock
+        if _vector_store and _llm:
+            return _vector_store, _llm
 
-    if not supabase_url or not supabase_key or not groq_api_key:
-        print("RAG: Missing env variables (SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY)")
-        return None, None
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+        groq_api_key = os.getenv("GROQ_API_KEY")
 
-    try:
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        supabase_client = create_client(supabase_url, supabase_key)
+        if not supabase_url or not supabase_key or not groq_api_key:
+            print("RAG: Missing env variables (SUPABASE_URL, SUPABASE_SERVICE_KEY, GROQ_API_KEY)")
+            return None, None
 
-        _vector_store = CustomSupabaseVectorStore(
-            client=supabase_client,
-            embedding=embeddings,
-            table_name="metadata.documents",
-            query_name="match_documents_hybrid",  # Function is in public schema
-        )
+        try:
+            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+            supabase_client = create_client(supabase_url, supabase_key)
 
-        _llm = ChatGroq(
-            temperature=0.2,
-            model_name="openai/gpt-oss-20b",
-            groq_api_key=groq_api_key
-        )
-        return _vector_store, _llm
-    except Exception as e:
-        print(f"RAG: Initialization failed: {e}")
-        return None, None
+            _vector_store = CustomSupabaseVectorStore(
+                client=supabase_client,
+                embedding=embeddings,
+                table_name="metadata.documents",
+                query_name="match_documents_hybrid",  # Function is in public schema
+            )
+
+            _llm = ChatGroq(
+                temperature=0.2,
+                model_name="openai/gpt-oss-20b",
+                groq_api_key=groq_api_key
+            )
+            return _vector_store, _llm
+        except Exception as e:
+            print(f"RAG: Initialization failed: {e}")
+            return None, None
 
 
 # --- Prompt ---
 PROMPT = ChatPromptTemplate.from_messages([
     ("system",
-     "You are an expert tutor. Answer the question using the context.\n\n"
-     "CRITICAL RULES FOR FORMATTING:\n"
+     "You are an expert tutor. Answer the question using ONLY the provided context.\n\n"
+     "CRITICAL RULES:\n"
+     "0. **HONESTY:** If the context does not contain enough information to answer the question, "
+     "say: 'I don't have enough information in my sources to answer this question. "
+     "Please try rephrasing or asking about a specific topic from your syllabus.' "
+     "Do NOT make up or hallucinate an answer.\n\n"
      "1. **MATH:** Do NOT use LaTeX or `$$` delimiters. Write formulas in plain text or using Unicode characters where possible.\n"
      "   - Example: Use 'E = mc^2' instead of '$$ E = mc^2 $$'.\n"
      "   - Use standard text representations (e.g., 'lambda', 'nu', 'sqrt()').\n\n"

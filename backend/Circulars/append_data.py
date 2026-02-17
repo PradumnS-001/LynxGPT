@@ -22,7 +22,9 @@ from nltk.tokenize import sent_tokenize
 # --- Environment & Logging ---
 load_dotenv()
 # If needed on Windows:
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+import platform
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model_name = "sentence-transformers/all-MiniLM-L6-v2"
@@ -128,7 +130,7 @@ def extract_course_info_with_groq(text: str, filename: str) -> dict:
 # --- Rest of your original _check_connection_and_connect, chunk_text_smart, and _append_data logic remains here ---
 
 def _check_connection_and_connect(dbname, user, password, host, port):
-    conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
+    conn = psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port, connect_timeout=10)
     conn.autocommit = False
     return conn
 

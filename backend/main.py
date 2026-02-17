@@ -360,10 +360,12 @@ def upload_pdf(conv_id: str, pdf_type: str, file: UploadFile = File(...)):
         result = process_single_pdf(content, file.filename)
         print("PDF Processor Result:", result)
 
-        if result["status"] != "Success":
-            bot_text = f"PDF processing failed: {result.get('status', 'Unknown error')}"
-        else:
+        if result["status"] == "Success":
             bot_text = f"PDF processed successfully"
+        elif result["status"] == "Duplicate":
+            bot_text = result.get("message", "This file is already in the database.")
+        else:
+            bot_text = f"PDF processing failed: {result.get('message', result.get('status', 'Unknown error'))}"
     elif pdf_type == "ResumePDF":
         uploads_dir = os.path.join("Dreamer", "dreamer", "uploads")
         os.makedirs(uploads_dir, exist_ok=True)

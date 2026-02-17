@@ -114,7 +114,7 @@ def retrieve_top_chunks(question: str):
     conn = None
     cur = None
     try:
-        conn = psycopg2.connect(host=HOST, database=DBNAME, user=USER, password=PASSWORD, port=PORT)
+        conn = psycopg2.connect(host=HOST, database=DBNAME, user=USER, password=PASSWORD, port=PORT, connect_timeout=10)
         cur = conn.cursor()
 
         q_vec = embeddings.embed_query(question)
@@ -177,12 +177,12 @@ def retrieve_top_chunks(question: str):
                 """, (q_vec_str,))
                 res = cur.fetchone()
                 if not res:
-                    return []
+                    return [], set()
                 metadata_ids = [res[0]]
             except Exception as e:
                 print(f"[WARN] Embedding fallback search failed: {e}")
                 conn.rollback()
-                return []
+                return [], set()
 
         # Step 2 - fetch top-6 chunks across the matched metadata_ids by embedding similarity
         try:
@@ -199,7 +199,7 @@ def retrieve_top_chunks(question: str):
         except Exception as e:
             print(f"[ERROR] Chunk retrieval failed: {e}")
             conn.rollback()
-            return []
+            return [], set()
 
         cleaned_docs = []
         circular_ids_used = set()
@@ -214,7 +214,7 @@ def retrieve_top_chunks(question: str):
     
     except Exception as e:
         print(f"[ERROR] retrieve_top_chunks failed: {e}")
-        return []
+        return [], set()
     
     finally:
         if cur:
@@ -246,19 +246,27 @@ def ask_question_once(question: str) -> str:
     # For each used circular_id, fetch the PDF link from circulars table
     links = []
     if circular_ids:
-        conn = psycopg2.connect(host=HOST, database=DBNAME, user=USER, password=PASSWORD, port=PORT)
-        cur = conn.cursor()
-        # fetch unique urls for the circular ids
-        cur.execute("""
-            SELECT DISTINCT id, url
-            FROM circulars
-            WHERE id = ANY(%s);
-        """, (list(circular_ids),))
-        for cid, url in cur.fetchall():
-            if url:
-                links.append(url)
-        cur.close()
-        conn.close()
+        conn = None
+        cur = None
+        try:
+            conn = psycopg2.connect(host=HOST, database=DBNAME, user=USER, password=PASSWORD, port=PORT, connect_timeout=10)
+            cur = conn.cursor()
+            # fetch unique urls for the circular ids
+            cur.execute("""
+                SELECT DISTINCT id, url
+                FROM circulars
+                WHERE id = ANY(%s);
+            """, (list(circular_ids),))
+            for cid, url in cur.fetchall():
+                if url:
+                    links.append(url)
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch circular links: {e}")
+        finally:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
         
     if not knows:
         links = []

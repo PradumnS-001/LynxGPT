@@ -2,7 +2,10 @@ import os
 import requests
 import json
 import pytesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+import platform
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# On Linux/Docker, tesseract is on PATH via apt-get install
 from pdf2image import convert_from_bytes 
 import cv2
 import numpy as np

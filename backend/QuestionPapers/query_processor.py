@@ -49,9 +49,15 @@ Follow these rules exactly:
 
 6.  **Disambiguation (NEW RULE):** A phrase identified as the department (e.g., "computer science and engineering") **CANNOT** also be extracted as the subject. The subject must be a separate topic.
 
-7.  **Robust Subject Typo Correction:** You **must** correct common misspellings in *subject* names.
+7.  **Robust Subject Typo Correction (CRITICAL):** You **must** correct ALL obvious misspellings, truncated words, and typos in subject names. This includes missing letters, swapped letters, and incomplete words. Always output the properly spelled, complete subject name.
     * `algoritms` -> `algorithms`
     * `desing and analyis` -> `design and analysis`
+    * `transfr` -> `transfer`
+    * `thermodynmics` -> `thermodynamics`
+    * `heat transfr` -> `heat transfer`
+    * `phase transformtion` -> `phase transformation`
+    * `dta structures` -> `data structures`
+    * Apply this correction to ANY misspelled word, not just the examples above.
 
 8.  **Year:** Extract the four-digit year.
 
@@ -114,24 +120,33 @@ JSON Output:
         return {'department': None, 'subject': None, 'year': None, 'exam_type': None, 'error': str(e)}
 
 def search_database(client: Client, metadata: dict) -> (list, str): # type: ignore
-    """Builds and runs a query using the Supabase client."""
+    """Builds and runs a query using the Supabase client. 
+    Uses strict AND matching first, falls back to OR matching if no results."""
     
-    # Added exam_type to the select statement
-    query = client.schema('metadata').table('metadata').select('department, subject, year, file_url, exam_type')
-    query_details = "SELECT department, subject, year, file_url, exam_type FROM metadata.metadata WHERE "
-    filters_applied = []
+    STOP_WORDS = {'and', 'of', 'the', 'for', 'in', 'to', 'a', 'an', 'on', 'at'}
 
-    try:
+    def _build_query(use_fuzzy=False):
+        """Build and execute a query. If use_fuzzy=True, use OR for subject words."""
+        query = client.schema('metadata').table('metadata').select('department, subject, year, file_url, exam_type')
+        filters_applied = []
+
         if metadata.get("department"):
             query = query.eq('department', metadata['department'])
             filters_applied.append(f"department = '{metadata['department']}'")
 
         if metadata.get("subject"):
-            # Split subject into words for a more robust "AND" search
-            words = str(metadata['subject']).split()
-            for word in words:
-                query = query.ilike('subject', f'%{word}%')
-            filters_applied.append(f"subject ILIKE '%{metadata['subject']}%'") # Simplified for logging
+            words = [w for w in str(metadata['subject']).split() if w.lower() not in STOP_WORDS]
+            if words:
+                if use_fuzzy:
+                    # OR matching — any keyword can match
+                    or_conditions = ",".join([f"subject.ilike.%{word}%" for word in words])
+                    query = query.or_(or_conditions)
+                    filters_applied.append(f"subject ILIKE ANY OF [{', '.join(words)}] (fuzzy)")
+                else:
+                    # AND matching — all keywords must match (original behavior)
+                    for word in words:
+                        query = query.ilike('subject', f'%{word}%')
+                    filters_applied.append(f"subject ILIKE ALL OF [{', '.join(words)}]")
 
         if metadata.get("year"):
             try:
@@ -144,31 +159,36 @@ def search_database(client: Client, metadata: dict) -> (list, str): # type: igno
             except (ValueError, TypeError):
                 print(f"[WARN] Non-integer year '{metadata['year']}' extracted, ignoring.")
 
-        # --- NEW: Exam Type Filter ---
         if metadata.get("exam_type"):
             query = query.eq('exam_type', metadata['exam_type'])
             filters_applied.append(f"exam_type = '{metadata['exam_type']}'")
 
-        # Add ordering
         query = query.order('year', desc=True).order('department').order('subject')
-        
-        # Build the log string
-        if filters_applied:
-            query_details += " AND ".join(filters_applied)
-        else:
-            query_details += "1=1" # No filters
+
+        query_details = "SELECT ... FROM metadata.metadata WHERE "
+        query_details += " AND ".join(filters_applied) if filters_applied else "1=1"
         query_details += " ORDER BY year DESC, department, subject;"
 
-        print(f"INFO: Executing Supabase query...")
         response = query.execute()
-        results = response.data
-        print(f"INFO: Query executed successfully, found {len(results)} results.")
+        return response.data, query_details
+
+    try:
+        # Step 1: Try strict AND matching
+        results, query_details = _build_query(use_fuzzy=False)
+        print(f"INFO: Strict search found {len(results)} results.")
+
+        # Step 2: If no results, fallback to fuzzy OR matching
+        if not results and metadata.get("subject"):
+            print("INFO: No strict results. Retrying with fuzzy OR matching...")
+            results, query_details = _build_query(use_fuzzy=True)
+            print(f"INFO: Fuzzy search found {len(results)} results.")
+
         return results, query_details
 
     except Exception as e:
         print(f"[ERROR] Supabase query failed: {e}")
         error_message = f"Database query failed: {e}"
-        return [{"error": error_message}], query_details + " [ERROR]"
+        return [{"error": error_message}], f"Query failed: {e}"
 
 
 def process_user_query(user_query: str) -> dict:
