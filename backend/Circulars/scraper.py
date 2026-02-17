@@ -80,7 +80,7 @@ def get_db_conn():
     load_dotenv()
     database_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DATABASE_URL")
     if database_url:
-        return psycopg2.connect(database_url, sslmode="require")
+        return psycopg2.connect(database_url, sslmode="require", connect_timeout=10)
 
     user = os.getenv("CIRCULAR_DB_USER")
     dbname = os.getenv("CIRCULAR_DB_NAME")
@@ -89,7 +89,7 @@ def get_db_conn():
     port = os.getenv("CIRCULAR_DB_PORT")
 
     dsn = f"host={host} port={port} dbname={dbname} user={user} password={password} sslmode=require"
-    return psycopg2.connect(dsn)
+    return psycopg2.connect(dsn, connect_timeout=10)
 
 def ensure_table(conn):
     pass
@@ -129,6 +129,13 @@ def upload_pdf_to_db(url, conn):
         conn.commit()
 
 def scrape_update():
+    global num, upper_limit, visited_pages, pdf_urls, limit_reached
+    
+    # Reset global state to avoid stale data from previous runs
+    visited_pages = set()
+    pdf_urls = set()
+    limit_reached = False
+    
     conn = None
     try:
         conn = get_db_conn()

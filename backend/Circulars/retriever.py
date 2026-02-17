@@ -80,10 +80,10 @@ def extract_course_info_from_query(question_lc: str):
             f"User query: {question_lc}\n"
         )
         resp = llm.invoke([SystemMessage(content=prompt)])
-        # try parse JSON from response
+        # resp is an AIMessage — parse its .content, not str(resp)
         import json
         try:
-            parsed = json.loads(str(resp))
+            parsed = json.loads(resp.content)
             return parsed.get("course_code"), parsed.get("course_name"), parsed.get("section")
         except Exception:
             pass
@@ -238,10 +238,11 @@ def ask_question_once(question: str) -> str:
 
     context = "\n\n".join(docs)
     print(context)
-    knows = True
     answer = rag_chain.invoke({"context": context, "question": question})
-    if answer == "I don't know. Please ask questions corresponding to the course plan.":
-        knows = False
+    # Check if the LLM indicated it doesn't know — use keyword matching instead of exact string
+    dont_know_phrases = ["i don't know", "i do not know", "no relevant", "cannot answer", "not enough information"]
+    answer_lower = answer.lower()
+    knows = not any(phrase in answer_lower for phrase in dont_know_phrases)
 
     # For each used circular_id, fetch the PDF link from circulars table
     links = []

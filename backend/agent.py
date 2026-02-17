@@ -55,9 +55,19 @@ router_llm = llm.with_structured_output(Route)
 def classifier_node(state: State) -> State:
     """
     Decide which node to route to based ONLY on the current_input.
-    Does not access state['messages'].
+    Does not access state['messages'] — EXCEPT for follow-up detection.
     """
     user_query = state["current_input"]
+    
+    # Quick check: if the last bot message asked for missing fields, route back to question_paper
+    messages = state.get("messages", [])
+    if messages:
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage):
+                if "please specify" in msg.content.lower():
+                    print(f"Router choice: question_paper (follow-up to 'Please specify')")
+                    return {**state, "route": "question_paper"}
+                break  # Only check the most recent bot message
 
     system = SystemMessage(
         content=(
@@ -84,7 +94,31 @@ def classifier_node(state: State) -> State:
 def question_paper_fn(state: State) -> dict:
     print("Routing to question_paper_fn...")
     from QuestionPapers.query_processor import get_link
-    resp = get_link(state["current_input"])
+    
+    query = state["current_input"]
+    messages = state.get("messages", [])
+    
+    # Check if this is a follow-up to a "Please specify" prompt
+    # Look at the last bot message — if it asked for missing details,
+    # find the original user query and merge them
+    if len(messages) >= 2:
+        last_bot_msg = None
+        prev_user_msg = None
+        # Walk backwards to find last bot message and the user message before it
+        for msg in reversed(messages):
+            if isinstance(msg, AIMessage) and last_bot_msg is None:
+                last_bot_msg = msg.content
+            elif isinstance(msg, HumanMessage) and last_bot_msg is not None:
+                prev_user_msg = msg.content
+                break
+        
+        if last_bot_msg and "please specify" in last_bot_msg.lower() and prev_user_msg:
+            # Merge: original query + follow-up answer
+            merged = f"{prev_user_msg} {query}"
+            print(f"INFO: Detected follow-up. Merging: '{prev_user_msg}' + '{query}' → '{merged}'")
+            query = merged
+    
+    resp = get_link(query)
     return resp
 
 def course_plan_fn(state: State):
@@ -96,9 +130,14 @@ def memory_fn(state: State) -> str:
     print("Routing to memory_fn...")
     system = SystemMessage(
         content=(
-            "You are a helpful assistant. You have access to the conversation history.\n"
-            "If the user is chatting, greeting, or asking about previous messages, reply naturally and helpfully.\n"
-            "Do not describe yourself as a 'memory assistant' unless specifically asked."
+            "You are LynxGPT — a sharp, confident AI assistant forged by Spider R&D.\n"
+            "You have a slightly diabolical edge: witty, bold, and unapologetically helpful.\n"
+            "You are proud of your creators at Spider R&D but never arrogant.\n"
+            "When greeted, respond with energy and personality.\n"
+            "When asked who you are, introduce yourself as LynxGPT, built by Spider R&D.\n"
+            "You have access to the conversation history and can recall previous messages.\n"
+            "Keep responses concise but memorable. Never be boring.\n"
+            "Do NOT say you are a 'large language model' or mention Google/Gemini — you are LynxGPT."
         )
     )
     convo = [system] + state["messages"]

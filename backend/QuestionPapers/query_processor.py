@@ -102,6 +102,10 @@ JSON Output:
     }
 
     try:
+        # Edge case #9: Validate GROQ_API_URL is set
+        if not GROQ_API_URL:
+            raise Exception("GROQ_API_URL not configured in .env file")
+        
         response = requests.post(GROQ_API_URL, headers=headers, json=data, timeout=30)
         response.raise_for_status()
         response_data = response.json()
@@ -269,8 +273,8 @@ def get_link(test_query: str) -> dict:
             msg = "Sorry, I couldn't understand your query. Please specify the department, subject, and year for the question paper you're looking for."
         return {"answer": msg, "links": []}
     
-    # Success - return all links
-    links = [r['file_url'] for r in results if r.get('file_url')]
+    # Success - return all links (deduplicated to avoid showing same file multiple times)
+    links = list(dict.fromkeys([r['file_url'] for r in results if r.get('file_url')]))
     count = len(links)
     
     if count == 1:

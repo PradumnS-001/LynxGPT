@@ -23,6 +23,7 @@ TOP_N_CHARACTERS = 600
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_API_URL = os.getenv("GROQ_API_URL")
+GROQ_LLM_MODEL = os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-20b")  # Fallback to default if not set
 HF_API_KEY = os.getenv("HF_API_KEY")
 
 supabase_URL = os.getenv("SUPABASE_URL")
@@ -83,7 +84,8 @@ def embedding_file(text: str) -> list:
     hf_client = InferenceClient(api_key=HF_API_KEY)
 
     try:
-        res = hf_client.feature_extraction(text, model="sentence-transformers/all-MiniLM-L6-v2")
+        # Add timeout to prevent hanging
+        res = hf_client.feature_extraction(text, model="sentence-transformers/all-MiniLM-L6-v2", timeout=30)
         embedding = res.tolist()
         if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0],list):
             return embedding[0]
@@ -193,7 +195,7 @@ Now, perform the same task on the following text:
 """
     headers = { "Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json" }
     data = {
-        "model": "openai/gpt-oss-20b",
+        "model": GROQ_LLM_MODEL,  # Use env var for consistency with query_processor
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "response_format": {"type": "json_object"}
@@ -205,18 +207,38 @@ Now, perform the same task on the following text:
         message_content = response_data['choices'][0]['message']['content']
         metadata = json.loads(message_content)
 
-        # Standardize year to integer or None
+        # Standardize year to integer or None, with validation
         for key in ['department', 'subject']:
             if key not in metadata: metadata[key] = None
         
         llm_year = metadata.get('year')
         if isinstance(llm_year, str):
             try:
-                metadata['year'] = int(llm_year)
+                year_int = int(llm_year)
+                # Validate year range (match query_processor validation)
+                if 1900 < year_int < 2100:
+                    metadata['year'] = year_int
+                else:
+                    print(f"[WARN] Year {year_int} out of valid range (1900-2100), setting to None")
+                    metadata['year'] = None
             except (ValueError, TypeError):
                 metadata['year'] = None
-        elif not isinstance(llm_year, int):
-             metadata['year'] = None
+        elif isinstance(llm_year, int):
+            # Validate integer year
+            if 1900 < llm_year < 2100:
+                metadata['year'] = llm_year
+            else:
+                print(f"[WARN] Year {llm_year} out of valid range (1900-2100), setting to None")
+                metadata['year'] = None
+        else:
+            metadata['year'] = None
+        
+        # Validate exam_type
+        VALID_EXAM_TYPES = ['endsem', 'midsem', 'ct']
+        exam_type = metadata.get('exam_type')
+        if exam_type and exam_type not in VALID_EXAM_TYPES:
+            print(f"[WARN] Invalid exam_type '{exam_type}' returned by LLM, defaulting to 'ct'")
+            metadata['exam_type'] = 'ct'
 
         return metadata
     except Exception as e:
@@ -311,12 +333,13 @@ def process_single_pdf(pdf_bytes: bytes, filename: str) -> dict:
     # (2.5).Vector check
     print("Embedding check")
     vector = embedding_file(top_text)
-    if vector:
-        if second_check_duplicate(supabase_client, vector):
-            print("Duplicate skipped")
-            return {"filename": filename, "status": "Duplicate", "message": "This file is already in database"}
-    else:
-        print("Vector embedding failed")
+    if not vector:
+        print("[ERROR] Vector embedding failed, blocking upload to prevent empty embeddings in DB")
+        return {"filename": filename, "status": "Error", "message": "Failed to generate embedding for this PDF. Please try again."}
+    
+    if second_check_duplicate(supabase_client, vector):
+        print("Duplicate skipped")
+        return {"filename": filename, "status": "Duplicate", "message": "This file is already in database"}
 
     # 3. Extract Metadata via LLM
     metadata = extract_metadata_with_groq(top_text, filename)
@@ -354,4 +377,12 @@ def process_single_pdf(pdf_bytes: bytes, filename: str) -> dict:
     if insertion_success:
         return {"filename": filename, "status": "Success", "metadata": metadata,"raw_text":top_text}
     else:
+        # Bug fix: Delete orphaned file from storage if DB insert fails
+        print(f"[ERROR] DB insertion failed. Cleaning up orphaned file from storage: {strg_path}")
+        try:
+            supabase_client.storage.from_(bucketname).remove([strg_path])
+            print(f"INFO: Successfully deleted orphaned file from storage")
+        except Exception as cleanup_err:
+            print(f"[WARN] Failed to clean up orphaned file: {cleanup_err}")
+        
         return {"filename": filename, "status": "Error", "message": "Failed to insert metadata into Supabase database.", "metadata": metadata,"raw_text":top_text}
