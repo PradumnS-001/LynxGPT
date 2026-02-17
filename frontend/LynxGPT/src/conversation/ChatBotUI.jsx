@@ -330,25 +330,83 @@ function ChatBotUI({ conversationId }) {
       return;
     }
 
+    // Show the user's upload as a message
+    setMessages(prev => [...prev, { sender: "gru", text: `📄 Uploaded: ${file.name}` }]);
+    setShowChat(true);
+
+    // Show typing indicator while processing
+    setBotTyping(true);
+    typingConversationIdRef.current = conversationId;
+    const currentConvId = conversationId;
+
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(
-      `${API_URL}/conversations/${conversationId}/upload_pdf/${pdfType}`,
-      {
-        method: "POST",
-        body: formData
+    try {
+      const res = await fetch(
+        `${API_URL}/conversations/${conversationId}/upload_pdf/${pdfType}`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+
+      const data = await res.json();
+      const botText = data.bot_text || `Received ${pdfType}: ${file.name}`;
+
+      // Check if conversation changed while waiting
+      if (typingConversationIdRef.current !== currentConvId) {
+        setBotTyping(false);
+        typingConversationIdRef.current = null;
+        return;
       }
-    );
 
-    const data = await res.json();
-    const botText = data.bot_text || `Received ${pdfType}: ${file.name}`;
+      // Add empty bot message and type into it
+      let targetIndex;
+      setMessages(prev => {
+        const copy = [...prev, { sender: "bot", text: "" }];
+        targetIndex = copy.length - 1;
+        return copy;
+      });
 
-    setMessages(prev => [
-      ...prev,
-      { sender: "bot", text: botText }
-    ]);
-    setShowChat(true);
+      // Small pause before typing
+      await new Promise(r => setTimeout(r, 250));
+
+      // Type out the response character by character
+      const charDelay = Math.max(8, Math.floor(800 / Math.max(50, botText.length)));
+      await new Promise((resolve) => {
+        let i = 0;
+        const tick = () => {
+          if (activeConversationIdRef.current !== currentConvId) {
+            resolve();
+            return;
+          }
+          i += 1;
+          setMessages(prev => {
+            const copy = [...prev];
+            if (!copy[targetIndex]) copy[targetIndex] = { sender: "bot", text: "" };
+            copy[targetIndex] = { ...copy[targetIndex], text: botText.slice(0, i) };
+            return copy;
+          });
+          if (i < botText.length) {
+            setTimeout(tick, charDelay);
+          } else {
+            resolve();
+          }
+        };
+        tick();
+      });
+
+    } catch (error) {
+      console.error("PDF upload error:", error);
+      setMessages(prev => [...prev, { sender: "bot", text: "Error processing file. Please try again." }]);
+    } finally {
+      if (typingConversationIdRef.current === currentConvId) {
+        setBotTyping(false);
+        typingConversationIdRef.current = null;
+      }
+    }
+
     event.target.value = "";
 
     setTimeout(() => {
