@@ -66,7 +66,7 @@ def classifier_node(state: State) -> State:
             "  or similar.\n"
             "- 'course_plan': if the user is asking for course plans, syllabus, circulars, CCM, course structure,\n"
             "  exam pattern, or related topics.\n"
-            "- 'memory': if the user is asking about previous parts of the SAME conversation (e.g., 'What did I ask?') OR just saying 'hi'/'hello' (greetings).\n"
+            "- 'memory': if the user is asking about previous parts of the SAME conversation (e.g., 'What did I ask?'), greetings ('hi', 'hello'), identity/meta questions ('who are you', 'what can you do', 'what is this', 'help'), or casual conversational remarks ('thanks', 'thank you', 'okay', 'got it', 'cool', 'bye', 'nice', 'great').\n"
             "- 'resume_qa': if the user is asking clarifying questions about their uploaded resume, skills, experience, or job recommendations.\n"
             "- 'subject_qa': if the user is asking subject-specific questions, definitions, formulas, or academic content questions (e.g., 'What is thermodynamics?', 'Explain Newton's laws').\n"
             "- 'out_of_scope': for everything else not matching the above.\n"

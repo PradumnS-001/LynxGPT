@@ -30,22 +30,22 @@ def create_extraction_prompt(resume_text):
     """Create LLM prompt for structured information extraction."""
     return f"""Extract the following information from this resume and return it as a JSON object:
 
-1. education: The highest level of education (e.g., "Bachelor's", "Master's", "PhD", "High School")
-2. experience: Total years of experience as a single number (e.g., 5)
-3. key_skills: A comma-separated list of technical and professional skills
-4. department: The primary department/field (e.g., "Engineering", "Marketing", "Sales", "Finance", "HR")
-5. role_category: The primary role category (e.g., "Software Development", "Data Science", "Marketing", "Sales")
+1. Title: The candidate's desired job title or current role (e.g., "Data Scientist", "Software Developer", "PHP Developer")
+2. Skills: A comma-separated list of technical and professional skills
+3. Description: A brief professional summary of the candidate (2-3 sentences)
+4. experience: Total years of experience as a single number (e.g., 5)
+5. education: The highest level of education (e.g., "Bachelor's", "Master's", "PhD", "High School")
 
 Resume text:
 {resume_text}
 
 Return ONLY a valid JSON object with these exact keys:
 {{
-  "education": "",
+  "Title": "",
+  "Skills": "",
+  "Description": "",
   "experience": 0,
-  "key_skills": "",
-  "department": "",
-  "role_category": ""
+  "education": ""
 }}"""
 
 
@@ -102,7 +102,7 @@ def extract_candidate_info(resume_text):
     candidate_info = parse_llm_response(llm_response)
     
     # Validate required fields
-    required_fields = ['education', 'experience', 'key_skills', 'department', 'role_category']
+    required_fields = ['Title', 'Skills', 'Description', 'experience', 'education']
     for field in required_fields:
         if field not in candidate_info:
             candidate_info[field] = ""
