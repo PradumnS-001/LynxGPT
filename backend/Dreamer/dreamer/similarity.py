@@ -2,9 +2,22 @@ from sentence_transformers import SentenceTransformer
 from supabase import create_client, Client
 from Dreamer.dreamer import resume_parser
 from Dreamer.dreamer import config
+from Dreamer.dreamer.utils import log_step
 
-supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
-embedder = SentenceTransformer(config.EMBEDDING_MODEL)
+# --- Guarded module-level init (prevents backend crash if config is missing) ---
+try:
+    if not config.SUPABASE_URL or not config.SUPABASE_KEY:
+        raise ValueError("DREAMER_SUPABASE_URL or DREAMER_SUPABASE_KEY is not set")
+    supabase: Client = create_client(config.SUPABASE_URL, config.SUPABASE_KEY)
+except Exception as e:
+    log_step("Similarity", f"WARNING: Supabase init failed: {e}. Dreamer will not work.")
+    supabase = None
+
+try:
+    embedder = SentenceTransformer(config.EMBEDDING_MODEL)
+except Exception as e:
+    log_step("Similarity", f"WARNING: SentenceTransformer init failed: {e}. Dreamer will not work.")
+    embedder = None
 
 def format_resume_for_embedding(resume_data):
     return (
@@ -14,24 +27,42 @@ def format_resume_for_embedding(resume_data):
     )
 
 def embed_resume_fields(title_text, skills_text, desc_text):
+    if embedder is None:
+        raise RuntimeError("SentenceTransformer not initialized. Check Dreamer config.")
+    
+    # Warn if all fields are empty — results will be meaningless
+    if not title_text.strip() and not skills_text.strip() and not desc_text.strip():
+        log_step("Similarity", "WARNING: All resume fields are empty. Embedding results will be meaningless.")
+    
     emb_title = embedder.encode(title_text).tolist()
     emb_skills = embedder.encode(skills_text).tolist()
     emb_desc = embedder.encode(desc_text).tolist()
     return emb_title, emb_skills, emb_desc
 
+def _safe_rpc(rpc_name, params):
+    """Call a Supabase RPC with error handling. Returns [] on failure."""
+    if supabase is None:
+        raise RuntimeError("Supabase client not initialized. Check DREAMER_SUPABASE_URL/KEY.")
+    try:
+        result = supabase.rpc(rpc_name, params).execute()
+        return result.data or []
+    except Exception as e:
+        log_step("Similarity", f"ERROR: Supabase RPC '{rpc_name}' failed: {e}")
+        return []
+
 def search_supabase(emb_title, emb_skills, emb_desc, k=config.MATCH_TOP_K):
-    r1 = supabase.rpc(config.MATCH_RPC_TITLE, {
+    r1 = _safe_rpc(config.MATCH_RPC_TITLE, {
         "query_embedding": emb_title,
         "match_count": k
-    }).execute().data
-    r2 = supabase.rpc(config.MATCH_RPC_SKILLS, {
+    })
+    r2 = _safe_rpc(config.MATCH_RPC_SKILLS, {
         "query_embedding": emb_skills,
         "match_count": k
-    }).execute().data
-    r3 = supabase.rpc(config.MATCH_RPC_DESC, {
+    })
+    r3 = _safe_rpc(config.MATCH_RPC_DESC, {
         "query_embedding": emb_desc,
         "match_count": k
-    }).execute().data
+    })
     return r1, r2, r3
 
 def combine_scores(res_title, res_skills, res_desc,
@@ -50,8 +81,14 @@ def combine_scores(res_title, res_skills, res_desc,
 def fetch_jobs(job_ids):
     if not job_ids:
         return []
-    response = supabase.table(config.SUPABASE_TABLE_JOBS).select("*").in_("job_id", job_ids).execute()
-    return response.data
+    if supabase is None:
+        raise RuntimeError("Supabase client not initialized. Check DREAMER_SUPABASE_URL/KEY.")
+    try:
+        response = supabase.table(config.SUPABASE_TABLE_JOBS).select("*").in_("job_id", job_ids).execute()
+        return response.data or []
+    except Exception as e:
+        log_step("Similarity", f"ERROR: Failed to fetch jobs: {e}")
+        return []
 
 def rank_jobs(score_map, top_n=config.MATCH_TOP_N):
     sorted_ids = sorted(score_map, key=lambda x: score_map[x], reverse=True)

@@ -55,3 +55,11 @@ EXPERIENCE_TOLERANCE = EXPERIENCE_TOLERANCE_YEARS  # Alias for database.py
 # Misc
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("LLM_API_KEY")
 MODEL_GEMINI = os.getenv("LLM_MODEL") or "gemini-2.0-flash"
+
+# Validation
+if not SUPABASE_URL:
+    print("WARNING: DREAMER_SUPABASE_URL is not set in .env")
+if not SUPABASE_KEY:
+    print("WARNING: DREAMER_SUPABASE_KEY is not set in .env")
+if not GEMINI_API_KEY:
+    print("WARNING: GOOGLE_API_KEY/LLM_API_KEY is not set in .env")

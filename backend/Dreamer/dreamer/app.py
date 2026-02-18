@@ -81,6 +81,20 @@ async def upload(file: UploadFile = File(...)):
     
     if not allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="Only PDF files allowed")
+        
+    # Check file size (streaming check or seek check)
+    # Since we are using UploadFile, we can check the spool/size if available, or read chunks.
+    # FastAPI UploadFile size might not be available until read.
+    # But we can check after reading or seek to end.
+    # Better: check content-length header if possible, or check after save.
+    # Let's check file.size if available (FastAPI 0.100+) or just read.
+    # Actually, simplistic check:
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    
+    if size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_FILE_SIZE/1024/1024}MB)")
 
     filename = secure_filename(file.filename)
     path = os.path.join(UPLOAD_FOLDER, filename)

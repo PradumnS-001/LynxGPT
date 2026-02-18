@@ -64,7 +64,8 @@ def extract_minimal(job_data):
     if created_ts:
         try:
             posted_on = datetime.fromtimestamp(created_ts / 1000).strftime("%Y-%m-%d %H:%M:%S")
-        except:
+        except Exception as e:
+            print(f"Error parsing date: {e}")
             posted_on = None
     else:
         posted_on = job_data.get('footerPlaceholderLabel', 'Unknown')

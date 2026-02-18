@@ -169,8 +169,6 @@ def resume_qa_fn(state: State) -> str:
     # But specifically instruct it to use the resume info
     convo = [system] + state["messages"]
     result = llm.invoke(convo)
-    convo = [system] + state["messages"]
-    result = llm.invoke(convo)
     return str(result.content)
 
 def subject_qa_fn(state: State) -> str:

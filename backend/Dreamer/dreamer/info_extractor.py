@@ -35,6 +35,7 @@ def create_extraction_prompt(resume_text):
 3. Description: A brief professional summary of the candidate (2-3 sentences)
 4. experience: Total years of experience as a single number (e.g., 5)
 5. education: The highest level of education (e.g., "Bachelor's", "Master's", "PhD", "High School")
+6. is_resume: Boolean true/false. Set to false if this document is NOT a CV/resume (e.g. it is a research paper, thesis, receipt, invoice, or random text).
 
 Resume text:
 {resume_text}
@@ -45,7 +46,8 @@ Return ONLY a valid JSON object with these exact keys:
   "Skills": "",
   "Description": "",
   "experience": 0,
-  "education": ""
+  "education": "",
+  "is_resume": true
 }}"""
 
 
@@ -86,20 +88,42 @@ def parse_llm_response(llm_response):
             data = json.loads(llm_response)
             return data
     
-    except json.JSONDecodeError as e:
-        log_step("LLM Parsing", f"Error parsing JSON: {str(e)}")
-        raise
+    except (json.JSONDecodeError, ValueError) as e:
+        log_step("LLM Parsing", f"Error parsing JSON: {str(e)}\nRaw Response: {llm_response}")
+        # If the LLM didn't return JSON (e.g. it returned a refusal "I cannot read this"), 
+        # assume it's not a valid resume.
+        return {"is_resume": False}
 
 
 def extract_candidate_info(resume_text):
     """Main function to extract structured candidate information using LLM."""
     log_step("Information Extraction", "Calling LangChain LLM for extraction")
     
-    # Call LLM
-    llm_response = call_llm_for_extraction(resume_text)
+    # Retry loop for LLM robustness
+    max_retries = 5
+    candidate_info = {}
     
-    # Parse response
-    candidate_info = parse_llm_response(llm_response)
+    for attempt in range(max_retries):
+        try:
+            # Call LLM
+            llm_response = call_llm_for_extraction(resume_text)
+            
+            # Parse response
+            candidate_info = parse_llm_response(llm_response)
+            
+            # Check if it's actually a resume
+            if candidate_info.get("is_resume") is False:
+                raise ValueError("The uploaded document does not appear to be a valid resume/CV.")
+                
+            break # Success!
+        except ValueError as ve:
+             # If it's the "not a resume" error, don't retry—just fail immediately
+             raise ve
+        except Exception as e:
+            log_step("Information Extraction", f"Attempt {attempt+1}/{max_retries} failed: {str(e)}")
+            if attempt == max_retries - 1:
+                log_step("Information Extraction", "All retries failed. Failing pipeline.")
+                raise RuntimeError(f"Failed to extract info after {max_retries} attempts: {e}")
     
     # Validate required fields
     required_fields = ['Title', 'Skills', 'Description', 'experience', 'education']

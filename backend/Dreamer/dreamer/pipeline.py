@@ -25,21 +25,26 @@ def run_resume_pipeline(pdf_path):
     """
     log_step("Pipeline", f"Starting pipeline for {pdf_path}")
 
-    # Step 1: Parse resume PDF to text
-    resume_text = parse_resume(pdf_path)
-    if not resume_text.strip():
-        raise ValueError("No text extracted from PDF")
+    try:
+        # Step 1: Parse resume PDF to text
+        resume_text = parse_resume(pdf_path)
+        if not resume_text.strip():
+            raise ValueError("No text extracted from PDF")
 
-    # Step 2: Extract structured info via LLM (Title, Skills, Description for embedding)
-    candidate_info = extract_candidate_info(resume_text)
+        # Step 2: Extract structured info via LLM (Title, Skills, Description for embedding)
+        candidate_info = extract_candidate_info(resume_text)
 
-    # Step 3: Vector search — find closest jobs by embedding similarity
-    ranked_jobs = get_top_jobs(candidate_info)
+        # Step 3: Vector search — find closest jobs by embedding similarity
+        ranked_jobs = get_top_jobs(candidate_info)
 
-    if not ranked_jobs:
-        log_step("Pipeline", "No jobs matched via vector search")
-    else:
-        log_step("Pipeline", f"Found {len(ranked_jobs)} matched jobs")
+        if not ranked_jobs:
+            log_step("Pipeline", "No jobs matched via vector search")
+        else:
+            log_step("Pipeline", f"Found {len(ranked_jobs)} matched jobs")
+            
+    except Exception as e:
+        log_step("Pipeline", f"Critical Error: {str(e)}")
+        raise RuntimeError(f"Pipeline failed: {str(e)}")
 
     return {
         "candidate_info": candidate_info,
