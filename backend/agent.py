@@ -40,6 +40,7 @@ class State(TypedDict):
     route: Literal["question_paper", "course_plan", "memory", "resume_qa", "subject_qa", "out_of_scope"]
     last_result: Optional[Any]
     resume_context: Optional[Dict]  # Added for Dreamer integration
+    job_context: Optional[List[Dict]] # Added for Job Matching QA
 
 # ---------------------------------------------------
 #  ROUTER MODEL OUTPUT SCHEMA
@@ -76,7 +77,7 @@ def classifier_node(state: State) -> State:
             "  or similar.\n"
             "- 'course_plan': if the user is asking for course plans, syllabus, circulars, CCM, course structure,\n"
             "  exam pattern, or related topics.\n"
-            "- 'memory': if the user is asking about previous parts of the SAME conversation (e.g., 'What did I ask?'), greetings ('hi', 'hello'), identity/meta questions ('who are you', 'what can you do', 'what is this', 'help'), or casual conversational remarks ('thanks', 'thank you', 'okay', 'got it', 'cool', 'bye', 'nice', 'great').\n"
+            "- 'memory': if the user is asking about previous parts of the SAME conversation (e.g., 'What did I ask?'), sharing personal details ('my name is...', 'I study in...', 'I am a...'), asking context-dependent questions ('and this?', 'what about that?'), greetings ('hi', 'hello'), identity/meta questions ('who are you', 'what can you do', 'what is this', 'help'), or casual conversational remarks ('thanks', 'thank you', 'okay', 'got it', 'cool', 'bye', 'nice', 'great').\n"
             "- 'resume_qa': if the user is asking clarifying questions about their uploaded resume, skills, experience, or job recommendations.\n"
             "- 'subject_qa': if the user is asking subject-specific questions, definitions, formulas, or academic content questions (e.g., 'What is thermodynamics?', 'Explain Newton's laws').\n"
             "- 'out_of_scope': for everything else not matching the above.\n"
@@ -128,16 +129,22 @@ def course_plan_fn(state: State):
 
 def memory_fn(state: State) -> str:
     print("Routing to memory_fn...")
+    # Inject current time for temporal awareness
+    current_time = datetime.now().strftime("%A, %d %B %Y, %I:%M %p")
+
     system = SystemMessage(
         content=(
             "You are LynxGPT — a sharp, confident AI assistant forged by Spider R&D.\n"
             "You have a slightly diabolical edge: witty, bold, and unapologetically helpful.\n"
             "You are proud of your creators at Spider R&D but never arrogant.\n"
-            "When greeted, respond with energy and personality.\n"
+            f"Current Date & Time: {current_time}\n"
+            "When greeted, respond with energy and personality (and mention the time of day if relevant).\n"
             "When asked who you are, introduce yourself as LynxGPT, built by Spider R&D.\n"
-            "You have access to the conversation history and can recall previous messages.\n"
+            "You have access to the conversation history. Proactively SCAN it for the user's Name, Role (student/faculty), Department, or Year.\n"
+            "If the user says 'My name is X', 'I am a Y', remember it and address them by name/role in future responses.\n"
             "Keep responses concise but memorable. Never be boring.\n"
-            "Do NOT say you are a 'large language model' or mention Google/Gemini — you are LynxGPT."
+            "Do NOT use markdown bolding (e.g., **text**). Use plain text or *italics* only if necessary.\n"
+            "Do NOT say you are a 'large language model' or mention Google/Gemini — you are LynxGPT. also dont use speical and escape characters give a proper structured format"
         )
     )
     convo = [system] + state["messages"]
@@ -156,12 +163,31 @@ def resume_qa_fn(state: State) -> str:
 
     # Format context as string
     context_str = str(context)
+    
+    # Format Job Context if available
+    jobs_str = "No specific job recommendations available yet."
+    job_context = state.get("job_context")
+    if job_context:
+        jobs_str = "Here are the jobs recommended for this candidate based on their resume:\n"
+        for i, job in enumerate(job_context):
+            jobs_str += (
+                f"Job {i+1}: {job.get('title')} at {job.get('company')}\n"
+                f"Location: {job.get('location')}\n"
+                f"Experience: {job.get('min_exp')} - {job.get('max_exp')} years\n"
+                f"Skills: {job.get('skills')}\n"
+                f"Description: {job.get('description')}\n" # Include full description for better matching
+                f"---\n"
+            )
 
     system = SystemMessage(
         content=(
             "You are a helpful career assistant. The user has uploaded their resume.\n"
             f"Here is the parsed information from their resume: {context_str}\n\n"
-            "Answer the user's question using ONLY this information. Be professional and encouraging."
+            f"{jobs_str}\n\n"
+            "Answer the user's question using this information. "
+            "If the user asks about suitability for a specific job, cross-reference their resume skills/experience with the job description. "
+            "Be professional and encouraging. "
+            "Do NOT use markdown bolding (e.g. **text**). Use plain text only."
         )
     )
     
@@ -276,7 +302,7 @@ except ImportError:
     sys.path.append(str(Path(__file__).parent))
     from database.redis_client import RedisClient, redis_host, redis_port
 
-def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, resume_context: Optional[Dict] = None, session_id: Optional[str] = None):
+def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, resume_context: Optional[Dict] = None, job_context: Optional[List[Dict]] = None, session_id: Optional[str] = None):
     """
     Invoke the agent with user input. 
     - If `conversation_history` is provided, it uses that (stateless mode).
@@ -327,7 +353,9 @@ def invoker(user_input: str, conversation_history: Optional[List[dict]] = None, 
         "current_input": user_input,
         "last_result": None,
         "route": "out_of_scope",
-        "resume_context": resume_context # Injected context
+        "route": "out_of_scope",
+        "resume_context": resume_context, # Injected context
+        "job_context": job_context # Injected job context
     }
 
     result = graph.invoke(init_state)

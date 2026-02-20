@@ -228,6 +228,9 @@ def add_message(conv_id: str, msg: Message):
         
         # Check for resume context in Redis
         resume_context = RedisClient.get_resume_context(conv_id)
+        
+        # Check for job context in Redis
+        job_context = RedisClient.get_job_context(conv_id)
     
         now_iso = datetime.now().isoformat()
     
@@ -240,12 +243,13 @@ def add_message(conv_id: str, msg: Message):
         # Store User Message in Redis
         RedisClient.add_message(conv_id, user_msg)
         
-        # Pass history + resume context to invoker
+        # Pass history + resume context + job_context to invoker
         try:
             raw_reply = invoker(
                 msg.text, 
                 conversation_history=conversation_history,
-                resume_context=resume_context
+                resume_context=resume_context,
+                job_context=job_context
             )
         except Exception as e:
             raw_reply = f"Couldn't call the backend agent: {e}"
@@ -380,6 +384,9 @@ def upload_pdf(conv_id: str, pdf_type: str, file: UploadFile = File(...)):
             
             # Save candidate info to Redis for Context Awareness
             RedisClient.save_resume_context(conv_id, candidate_info)
+            
+            # Save job recommendations to Redis for Context Awareness
+            RedisClient.save_job_context(conv_id, ranked_jobs)
             
             formatted_jobs = []
             for i, job in enumerate(ranked_jobs):  # Show top 5 only

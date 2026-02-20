@@ -81,9 +81,37 @@ class RedisClient:
         return RedisClient._memory_store.get(key)
 
     @staticmethod
+    def save_job_context(conv_id: str, context: List[Dict]):
+        """Save recommended jobs."""
+        key = f"chat:{conv_id}:jobs"
+        if r:
+            try:
+                r.set(key, json.dumps(context), ex=86400)
+                return
+            except ConnectionError:
+                pass
+
+        # Fallback
+        RedisClient._memory_store[key] = context
+
+    @staticmethod
+    def get_job_context(conv_id: str) -> Optional[List[Dict]]:
+        """Retrieve recommended jobs."""
+        key = f"chat:{conv_id}:jobs"
+        if r:
+            try:
+                data = r.get(key)
+                return json.loads(data) if data else None
+            except ConnectionError:
+                pass
+
+        # Fallback
+        return RedisClient._memory_store.get(key)
+
+    @staticmethod
     def clear_conversation(conv_id: str):
-        """Clear chat and resume data for a conversation."""
-        keys = [f"chat:{conv_id}:messages", f"chat:{conv_id}:resume"]
+        """Clear chat, resume, and job data for a conversation."""
+        keys = [f"chat:{conv_id}:messages", f"chat:{conv_id}:resume", f"chat:{conv_id}:jobs"]
         if r:
             try:
                 for k in keys:
