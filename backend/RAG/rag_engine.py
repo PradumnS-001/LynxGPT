@@ -81,6 +81,8 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
             match_thresh=0.0,
         )
 
+        print(f"[RAG DEBUG] Calling RPC '{self.query_name}' with q_text='{query_text}', match_c={k}")
+
         query_builder = self._client.rpc(self.query_name, match_documents_params)
 
         if postgrest_filter:
@@ -89,6 +91,13 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
             )
 
         res = query_builder.execute()
+
+        print(f"[RAG DEBUG] Raw Supabase response count: {len(res.data)}")
+        if res.data:
+            print(f"[RAG DEBUG] First result keys: {list(res.data[0].keys())}")
+            print(f"[RAG DEBUG] First result sample: {str(res.data[0])[:300]}")
+        else:
+            print("[RAG DEBUG] Supabase returned EMPTY data!")
 
         match_result = [
             (
@@ -102,7 +111,9 @@ class CustomSupabaseVectorStore(SupabaseVectorStore):
             for search in res.data
             if search.get("content")
         ]
+        print(f"[RAG DEBUG] Matched docs after content filter: {len(match_result)}")
         return match_result
+
 
 
 # --- Initialization ---
@@ -186,20 +197,20 @@ def ask_subject_qa(query: str) -> str:
         return "Sorry, the Subject QA module is not configured correctly (missing keys or connection failed)."
 
     try:
-        retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+        # Directly call our CUSTOM similarity_search to ensure hybrid params are passed correctly.
+        # Using as_retriever() bypasses our override and calls the base class method with wrong params.
+        docs = vector_store.similarity_search(query, k=4)
 
-        def format_docs(docs):
-            return "\n\n".join(doc.page_content for doc in docs)
+        if not docs:
+            return (
+                "I don't have enough information in my sources to answer this question. "
+                "Please try rephrasing or asking about a specific topic from your syllabus."
+            )
 
-        # Build LCEL chain: retrieve docs -> format -> prompt -> LLM -> parse
-        rag_chain = (
-            {"context": retriever | format_docs, "question": RunnablePassthrough()}
-            | PROMPT
-            | llm
-            | StrOutputParser()
-        )
+        context = "\n\n".join(doc.page_content for doc in docs)
 
-        response = rag_chain.invoke(query)
+        chain = PROMPT | llm | StrOutputParser()
+        response = chain.invoke({"context": context, "question": query})
 
         # Clean latex just in case
         cleaned_response = clean_latex(response)
@@ -207,3 +218,4 @@ def ask_subject_qa(query: str) -> str:
         return cleaned_response
     except Exception as e:
         return f"Error occurred during Subject QA: {e}"
+
